@@ -1,5 +1,5 @@
 {
-  "name": "hogarpro---gestión-de-tareas",
+  "name": "hogar-gómez-naveira-mota---gestión-de-tareas",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -12,7 +12,8 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "date-fns": "^4.1.0",
-    "lucide-react": "^0.563.0"
+    "lucide-react": "^0.563.0",
+    "@google/genai": "^1.40.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

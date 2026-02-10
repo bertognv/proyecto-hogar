@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>HogarPro</title>
+    <title>Hogar Gómez-Naveira Mota</title>
     
     <!-- PWA Meta Tags -->
     <meta name="theme-color" content="#4f46e5">
@@ -44,6 +44,11 @@
             user-select: text !important;
             -webkit-user-select: text !important;
         }
+        .vertical-text {
+          writing-mode: vertical-rl;
+          text-orientation: mixed;
+          transform: rotate(180deg);
+        }
     </style>
 <script type="importmap">
 {
@@ -53,7 +58,8 @@
     "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
     "date-fns": "https://esm.sh/date-fns@^4.1.0",
     "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
-    "date-fns/": "https://esm.sh/date-fns@^4.1.0/"
+    "date-fns/": "https://esm.sh/date-fns@^4.1.0/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.40.0"
   }
 }
 </script>

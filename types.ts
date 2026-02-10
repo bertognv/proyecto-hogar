@@ -1,6 +1,13 @@
 
 export type Frequency = 'daily' | 'weekly' | 'monthly' | 'periodic';
 
+export interface FamilyActivity {
+  id: string;
+  user: string;
+  action: string;
+  timestamp: string;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -11,6 +18,8 @@ export interface Task {
   lastCompletedAt?: string;
   nextDueDate: string;
   completedToday: boolean;
+  isRepetitive?: boolean;
+  lastModifiedBy?: string;
 }
 
 export interface ShoppingItem {
@@ -20,6 +29,7 @@ export interface ShoppingItem {
   price?: number;
   completed: boolean;
   category: string;
+  lastModifiedBy?: string;
 }
 
 export interface LaundryState {
@@ -27,6 +37,7 @@ export interface LaundryState {
   startTime?: string;
   reminderSent: boolean;
   durationMinutes: number;
+  startedBy?: string;
 }
 
 export interface DayPlanning {
@@ -37,6 +48,10 @@ export interface DayPlanning {
   meals: {
     lunch: string;
     dinner: string;
+    carmenLunch?: string;
+    albertoLunch?: string;
+    carmenDinner?: string;
+    albertoDinner?: string;
   };
 }
 
@@ -45,6 +60,7 @@ export interface UrgentNote {
   text: string;
   createdAt: string;
   isResolved: boolean;
+  author?: string;
 }
 
 export interface AppData {
@@ -53,11 +69,16 @@ export interface AppData {
   urgentNotes: UrgentNote[];
   userName: string;
   laundry: LaundryState;
-  weeklyPlanning: Record<number, DayPlanning>; // 0-6 represent Mon-Sun
+  weeklyPlanning: Record<number, DayPlanning>;
+  shifts: string[];
+  familyCode: string;
+  isSynced: boolean;
+  familyActivity: FamilyActivity[];
 }
 
 export enum AppTab {
   DASHBOARD = 'dashboard',
+  WEEKLY = 'weekly',
   TASKS = 'tasks',
   URGENT = 'urgent',
   SHOPPING = 'shopping',
