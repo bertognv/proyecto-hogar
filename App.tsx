@@ -153,7 +153,6 @@ const App: React.FC = () => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Migración de tareas si están vacías
         if (!parsed.tasks || parsed.tasks.length === 0) {
           parsed.tasks = INITIAL_TASKS;
         }
@@ -218,7 +217,8 @@ const App: React.FC = () => {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const fullWeekDays = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
-      const isShift = data.shifts.includes(format(addDays(startOfThisWeek, selectedDayIndex), 'yyyy-MM-dd'));
+      const dayISO = format(addDays(startOfThisWeek, selectedDayIndex), 'yyyy-MM-dd');
+      const isShift = data.shifts.includes(dayISO);
       const prompt = `Sugiere un menú rico y casero para un ${fullWeekDays[selectedDayIndex]} (Comida y Cena). Responde SOLO JSON: {"lunch": "...", "dinner": "..."}`;
       
       const response = await ai.models.generateContent({
@@ -346,6 +346,9 @@ const App: React.FC = () => {
     return eachDayOfInterval({ start, end });
   }, [currentCalendarMonth]);
 
+  const currentSelectedDayISO = format(addDays(startOfThisWeek, selectedDayIndex), 'yyyy-MM-dd');
+  const currentSelectedIsShift = data.shifts.includes(currentSelectedDayISO);
+
   return (
     <div className="max-w-md mx-auto min-h-screen bg-slate-50 flex flex-col relative pb-32">
       <header className="bg-white px-6 pt-12 pb-6 shadow-sm rounded-b-[2.5rem] sticky top-0 z-40 border-b border-slate-100">
@@ -421,7 +424,8 @@ const App: React.FC = () => {
                   </div>
                   <div className="bg-white/10 backdrop-blur-md rounded-2xl p-3 border border-white/10">
                     <div className="flex items-center gap-2 mb-1.5"><Dumbbell size={14} className="text-orange-300" /><span className="text-[9px] font-bold uppercase text-indigo-100">Deporte</span></div>
-                    <p className="text-[11px] font-black truncate">{data.shifts.includes(todayISO) ? 'Hospital' : (data.weeklyPlanning[todayIdx]?.sport.carmen || 'Libre')}</p>
+                    <p className="text-[10px] font-black truncate">C: {data.shifts.includes(todayISO) ? 'Hospital' : (data.weeklyPlanning[todayIdx]?.sport.carmen || 'Libre')}</p>
+                    <p className="text-[10px] font-black truncate">A: {data.weeklyPlanning[todayIdx]?.sport.alberto || 'Libre'}</p>
                   </div>
                 </div>
 
@@ -598,6 +602,7 @@ const App: React.FC = () => {
         )}
       </main>
 
+      {/* BOTÓN FLOTANTE UNIVERSAL */}
       <button onClick={() => setShowEditPlanning(true)} className="fixed bottom-24 right-6 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-2xl flex items-center justify-center z-[60] active:scale-90 transition-transform shadow-indigo-200">
         <Edit2 size={24} />
       </button>
@@ -613,7 +618,7 @@ const App: React.FC = () => {
       {/* MODAL DE EDICIÓN DE PLANNING MEJORADO */}
       {showEditPlanning && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-end justify-center" onClick={() => setShowEditPlanning(false)}>
-          <div className="bg-white w-full max-w-md rounded-t-[3rem] p-8 pb-12 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="bg-white w-full max-w-md rounded-t-[3rem] p-8 pb-12 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
              <div className="flex justify-between items-center mb-6">
                 <h3 className="text-xl font-black flex items-center gap-3">Planificar Semana <Edit2 className="text-indigo-600" /></h3>
                 <button onClick={() => setShowEditPlanning(false)} className="p-2 bg-slate-100 rounded-full text-slate-400"><X size={20} /></button>
@@ -621,7 +626,7 @@ const App: React.FC = () => {
              
              <div className="space-y-6">
                 <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block">Seleccionar Día</label>
+                  <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block">Seleccionar Día para Editar</label>
                   <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
                     {weekDaysShort.map((d, i) => (
                       <button key={i} onClick={() => setSelectedDayIndex(i)} className={`px-4 py-2 rounded-xl text-xs font-black flex-shrink-0 transition-all ${selectedDayIndex === i ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-50 text-slate-400'}`}>
@@ -631,47 +636,101 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100">
-                  <div className="flex justify-between items-center mb-4">
-                    <span className="text-[10px] font-black uppercase text-indigo-600">{fullWeekDays[selectedDayIndex]}</span>
-                    {isGeneratingMenu ? <Loader2 className="animate-spin text-indigo-600" size={16} /> : <button onClick={handleSuggestMenu} className="text-[9px] font-black uppercase bg-white text-indigo-600 px-3 py-1 rounded-full shadow-sm">💡 Sugerencia IA</button>}
+                <div className="p-5 bg-indigo-50/50 rounded-[2rem] border border-indigo-100 space-y-5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-black uppercase text-indigo-600">{fullWeekDays[selectedDayIndex]}</span>
+                    {isGeneratingMenu ? <Loader2 className="animate-spin text-indigo-600" size={16} /> : <button onClick={handleSuggestMenu} className="text-[9px] font-black uppercase bg-white text-indigo-600 px-3 py-1 rounded-full shadow-sm active:scale-95">💡 Sugerencia IA</button>}
                   </div>
 
                   <div className="space-y-4">
-                    <div>
-                      <label className="text-[9px] font-black uppercase text-slate-400 mb-1 flex items-center gap-1"><Sun size={12} className="text-emerald-400" /> Comida</label>
-                      <input 
-                        type="text" 
-                        value={data.weeklyPlanning[selectedDayIndex].meals.lunch || ''} 
-                        onChange={(e) => updatePlanning(selectedDayIndex, { meals: { ...data.weeklyPlanning[selectedDayIndex].meals, lunch: e.target.value } })}
-                        placeholder="Ej: Lentejas" 
-                        className="w-full p-3 bg-white rounded-xl border-none font-bold text-sm shadow-sm" 
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[9px] font-black uppercase text-slate-400 mb-1 flex items-center gap-1"><Moon size={12} className="text-indigo-400" /> Cena</label>
-                      <input 
-                        type="text" 
-                        value={data.weeklyPlanning[selectedDayIndex].meals.dinner || ''} 
-                        onChange={(e) => updatePlanning(selectedDayIndex, { meals: { ...data.weeklyPlanning[selectedDayIndex].meals, dinner: e.target.value } })}
-                        placeholder="Ej: Ensalada" 
-                        className="w-full p-3 bg-white rounded-xl border-none font-bold text-sm shadow-sm" 
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[9px] font-black uppercase text-slate-400 mb-1 flex items-center gap-1"><Dumbbell size={12} className="text-orange-400" /> Deporte Carmen</label>
-                      <input 
-                        type="text" 
-                        value={data.weeklyPlanning[selectedDayIndex].sport.carmen || ''} 
-                        onChange={(e) => updatePlanning(selectedDayIndex, { sport: { ...data.weeklyPlanning[selectedDayIndex].sport, carmen: e.target.value } })}
-                        placeholder="Ej: Gym" 
-                        className="w-full p-3 bg-white rounded-xl border-none font-bold text-sm shadow-sm" 
-                      />
+                    {!currentSelectedIsShift ? (
+                      <>
+                        <div>
+                          <label className="text-[9px] font-black uppercase text-slate-400 mb-1 flex items-center gap-1"><Sun size={12} className="text-emerald-400" /> Comida</label>
+                          <input 
+                            type="text" 
+                            value={data.weeklyPlanning[selectedDayIndex].meals.lunch || ''} 
+                            onChange={(e) => updatePlanning(selectedDayIndex, { meals: { ...data.weeklyPlanning[selectedDayIndex].meals, lunch: e.target.value } })}
+                            placeholder="Ej: Lentejas" 
+                            className="w-full p-3 bg-white rounded-xl border-none font-bold text-sm shadow-sm outline-none focus:ring-2 focus:ring-indigo-100" 
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-black uppercase text-slate-400 mb-1 flex items-center gap-1"><Moon size={12} className="text-indigo-400" /> Cena</label>
+                          <input 
+                            type="text" 
+                            value={data.weeklyPlanning[selectedDayIndex].meals.dinner || ''} 
+                            onChange={(e) => updatePlanning(selectedDayIndex, { meals: { ...data.weeklyPlanning[selectedDayIndex].meals, dinner: e.target.value } })}
+                            placeholder="Ej: Ensalada" 
+                            className="w-full p-3 bg-white rounded-xl border-none font-bold text-sm shadow-sm outline-none focus:ring-2 focus:ring-indigo-100" 
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="p-3 bg-orange-50/50 rounded-xl border border-orange-100 space-y-3">
+                           <p className="text-[8px] font-black uppercase text-orange-600 flex items-center gap-1"><Stethoscope size={10}/> Carmen (En Guardia)</p>
+                           <input 
+                              type="text" 
+                              value={data.weeklyPlanning[selectedDayIndex].meals.carmenLunch || ''} 
+                              onChange={(e) => updatePlanning(selectedDayIndex, { meals: { ...data.weeklyPlanning[selectedDayIndex].meals, carmenLunch: e.target.value } })}
+                              placeholder="Tupper Comida" 
+                              className="w-full p-2 bg-white rounded-lg border-none font-bold text-xs shadow-sm" 
+                           />
+                           <input 
+                              type="text" 
+                              value={data.weeklyPlanning[selectedDayIndex].meals.carmenDinner || ''} 
+                              onChange={(e) => updatePlanning(selectedDayIndex, { meals: { ...data.weeklyPlanning[selectedDayIndex].meals, carmenDinner: e.target.value } })}
+                              placeholder="Cena Hospital" 
+                              className="w-full p-2 bg-white rounded-lg border-none font-bold text-xs shadow-sm" 
+                           />
+                        </div>
+                        <div className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 space-y-3">
+                           <p className="text-[8px] font-black uppercase text-indigo-600 flex items-center gap-1"><User size={10}/> Alberto (En Casa)</p>
+                           <input 
+                              type="text" 
+                              value={data.weeklyPlanning[selectedDayIndex].meals.albertoLunch || ''} 
+                              onChange={(e) => updatePlanning(selectedDayIndex, { meals: { ...data.weeklyPlanning[selectedDayIndex].meals, albertoLunch: e.target.value } })}
+                              placeholder="Comida en casa" 
+                              className="w-full p-2 bg-white rounded-lg border-none font-bold text-xs shadow-sm" 
+                           />
+                           <input 
+                              type="text" 
+                              value={data.weeklyPlanning[selectedDayIndex].meals.albertoDinner || ''} 
+                              onChange={(e) => updatePlanning(selectedDayIndex, { meals: { ...data.weeklyPlanning[selectedDayIndex].meals, albertoDinner: e.target.value } })}
+                              placeholder="Cena en casa" 
+                              className="w-full p-2 bg-white rounded-lg border-none font-bold text-xs shadow-sm" 
+                           />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-3 pt-2">
+                      <div>
+                        <label className="text-[9px] font-black uppercase text-slate-400 mb-1 flex items-center gap-1"><Dumbbell size={12} className="text-orange-400" /> Dep. Carmen</label>
+                        <input 
+                          type="text" 
+                          value={data.weeklyPlanning[selectedDayIndex].sport.carmen || ''} 
+                          onChange={(e) => updatePlanning(selectedDayIndex, { sport: { ...data.weeklyPlanning[selectedDayIndex].sport, carmen: e.target.value } })}
+                          placeholder="Ej: Gym" 
+                          className="w-full p-3 bg-white rounded-xl border-none font-bold text-sm shadow-sm" 
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-black uppercase text-slate-400 mb-1 flex items-center gap-1"><Dumbbell size={12} className="text-indigo-400" /> Dep. Alberto</label>
+                        <input 
+                          type="text" 
+                          value={data.weeklyPlanning[selectedDayIndex].sport.alberto || ''} 
+                          onChange={(e) => updatePlanning(selectedDayIndex, { sport: { ...data.weeklyPlanning[selectedDayIndex].sport, alberto: e.target.value } })}
+                          placeholder="Ej: Fútbol" 
+                          className="w-full p-3 bg-white rounded-xl border-none font-bold text-sm shadow-sm" 
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                <button onClick={() => { setShowEditPlanning(false); logActivity(`ha actualizado el planning del ${fullWeekDays[selectedDayIndex]}`); }} className="w-full p-5 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95">Guardar y Cerrar</button>
+                <button onClick={() => { setShowEditPlanning(false); logActivity(`ha actualizado el planning del ${fullWeekDays[selectedDayIndex]}`); }} className="w-full p-5 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-all">Guardar Planning</button>
              </div>
           </div>
         </div>
@@ -683,13 +742,31 @@ const App: React.FC = () => {
           <div className="bg-white w-full max-w-md rounded-t-[3rem] p-8 pb-12 shadow-2xl animate-in slide-in-from-bottom duration-300" onClick={e => e.stopPropagation()}>
              <h3 className="text-xl font-black mb-6">Nueva Tarea</h3>
              <div className="space-y-4">
-                <input type="text" placeholder="Título de la tarea" value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-none focus:ring-2 focus:ring-indigo-100" />
+                <input type="text" placeholder="Título de la tarea" value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-none focus:ring-2 focus:ring-indigo-100 outline-none" />
                 
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block">Frecuencia</label>
+                    <select value={newTaskFreq} onChange={(e) => setNewTaskFreq(e.target.value as Frequency)} className="w-full p-3 bg-slate-50 rounded-xl font-bold text-sm border-none">
+                       <option value="daily">Diaria</option>
+                       <option value="weekly">Semanal</option>
+                       <option value="periodic">Periódica (Días)</option>
+                       <option value="monthly">Mensual</option>
+                    </select>
+                  </div>
+                  {newTaskFreq === 'periodic' && (
+                    <div>
+                      <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block">¿Cada cuántos días?</label>
+                      <input type="number" placeholder="5" className="w-full p-3 bg-slate-50 rounded-xl font-bold text-sm border-none" />
+                    </div>
+                  )}
+                </div>
+
                 <div>
                   <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block">Categoría</label>
                   <div className="grid grid-cols-4 gap-2">
                     {CATEGORIES.map(c => (
-                      <button key={c.id} onClick={() => setNewTaskCategory(c.id)} className={`p-2 rounded-xl flex flex-col items-center gap-1 ${newTaskCategory === c.id ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-50 text-slate-400'}`}>
+                      <button key={c.id} onClick={() => setNewTaskCategory(c.id)} className={`p-2 rounded-xl flex flex-col items-center gap-1 transition-all ${newTaskCategory === c.id ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}>
                         {c.icon}
                         <span className="text-[7px] font-black uppercase">{c.label}</span>
                       </button>
@@ -741,9 +818,10 @@ const ShoppingList: React.FC<{ items: ShoppingItem[]; onToggle: (id: string) => 
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `Precio medio en España para: ${n.trim()}. Solo número.`,
+        contents: `Precio medio en España para: ${n.trim()}. Solo número sin símbolo de moneda.`,
       });
-      const price = parseFloat(response.text.trim().replace(/[^0-9.]/g, '')) || 0;
+      const priceStr = response.text.trim().replace(/[^0-9.]/g, '');
+      const price = parseFloat(priceStr) || 0;
       onAdd(n, price, 'Alimentación');
       setN('');
     } catch (e) {
@@ -758,7 +836,7 @@ const ShoppingList: React.FC<{ items: ShoppingItem[]; onToggle: (id: string) => 
     <div className="space-y-4">
       <div className="flex gap-2 bg-white p-4 rounded-3xl border border-slate-100 shadow-sm">
         <input type="text" placeholder="Añadir producto..." value={n} onChange={(e) => setN(e.target.value)} className="flex-1 bg-transparent font-bold outline-none" />
-        <button onClick={handleAdd} disabled={isEstimating} className="p-3 bg-indigo-600 text-white rounded-2xl shadow-md active:scale-90">
+        <button onClick={handleAdd} disabled={isEstimating} className="p-3 bg-indigo-600 text-white rounded-2xl shadow-md active:scale-90 flex items-center justify-center min-w-[48px]">
           {isEstimating ? <RefreshCw className="animate-spin" size={20} /> : <Plus size={20} />}
         </button>
       </div>
@@ -774,6 +852,12 @@ const ShoppingList: React.FC<{ items: ShoppingItem[]; onToggle: (id: string) => 
             </div>
           </div>
         ))}
+        {items.length === 0 && (
+          <div className="py-12 text-center text-slate-300">
+             <ShoppingCart size={32} className="mx-auto mb-2 opacity-20" />
+             <p className="text-xs font-bold">La lista está vacía</p>
+          </div>
+        )}
       </div>
     </div>
   );
