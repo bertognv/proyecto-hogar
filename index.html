@@ -6,7 +6,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Hogar Gómez-Naveira Mota</title>
     
-    <!-- PWA Meta Tags -->
     <meta name="theme-color" content="#4f46e5">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -14,64 +13,32 @@
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/263/263115.png">
 
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            -webkit-tap-highlight-color: transparent;
-            overscroll-behavior-y: contain;
-            /* Evita selección de texto para parecer nativa */
-            user-select: none;
-            -webkit-user-select: none;
-        }
-        .safe-bottom {
-            padding-bottom: calc(env(safe-area-inset-bottom) + 1rem);
-        }
-        @keyframes progress {
-          0% { width: 0%; }
-          100% { width: 100%; }
-        }
-        .animate-progress {
-          animation: progress 5s linear infinite;
-        }
-        /* Ocultar scrollbars */
-        ::-webkit-scrollbar {
-            display: none;
-        }
-        input, textarea {
-            user-select: text !important;
-            -webkit-user-select: text !important;
-        }
-        .vertical-text {
-          writing-mode: vertical-rl;
-          text-orientation: mixed;
-          transform: rotate(180deg);
-        }
+        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: contain; }
+        .safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom) + 1rem); }
+        ::-webkit-scrollbar { display: none; }
+        .vertical-text { writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg); }
+        .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
     </style>
 <script type="importmap">
 {
   "imports": {
-    "react/": "https://esm.sh/react@^19.2.4/",
     "react": "https://esm.sh/react@^19.2.4",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react-dom": "https://esm.sh/react-dom@^19.2.4",
     "date-fns": "https://esm.sh/date-fns@^4.1.0",
     "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
+    "date-fns/locale": "https://esm.sh/date-fns@^4.1.0/locale",
+    "@google/genai": "https://esm.sh/@google/genai@^1.40.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
     "date-fns/": "https://esm.sh/date-fns@^4.1.0/",
-    "@google/genai": "https://esm.sh/@google/genai@^1.40.0"
+    "react/": "https://esm.sh/react@^19.2.4/"
   }
 }
 </script>
 </head>
 <body class="bg-slate-50 text-slate-900">
     <div id="root"></div>
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW registration failed', err));
-        });
-      }
-    </script>
+    <script type="module" src="index.tsx"></script>
 </body>
 </html>

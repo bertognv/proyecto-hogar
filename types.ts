@@ -82,5 +82,6 @@ export enum AppTab {
   TASKS = 'tasks',
   URGENT = 'urgent',
   SHOPPING = 'shopping',
-  SETTINGS = 'settings'
+  SETTINGS = 'settings',
+  ACTIVITY = 'activity'
 }
