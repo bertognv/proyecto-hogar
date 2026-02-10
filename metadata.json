@@ -1,0 +1,5 @@
+{
+  "name": "HogarPro - Gestión de Tareas",
+  "description": "Una aplicación inteligente para la gestión de tareas del hogar con recordatorios programables, listas de la compra y seguimiento de tareas periódicas como limpieza, mascotas y mantenimiento.",
+  "requestFramePermissions": []
+}
