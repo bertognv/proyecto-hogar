@@ -32,6 +32,18 @@ export interface ShoppingItem {
   lastModifiedBy?: string;
 }
 
+export interface InventoryItem {
+  id: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  category: string;
+  image?: string; // base64 string
+  comments?: string;
+  lastUpdatedBy: string;
+  lastUpdatedAt: string;
+}
+
 export interface LaundryState {
   isActive: boolean;
   startTime?: string;
@@ -66,6 +78,7 @@ export interface UrgentNote {
 export interface AppData {
   tasks: Task[];
   shoppingItems: ShoppingItem[];
+  inventoryItems: InventoryItem[];
   urgentNotes: UrgentNote[];
   userName: string;
   laundry: LaundryState;
@@ -80,8 +93,7 @@ export enum AppTab {
   DASHBOARD = 'dashboard',
   WEEKLY = 'weekly',
   TASKS = 'tasks',
-  URGENT = 'urgent',
+  INVENTORY = 'inventory',
   SHOPPING = 'shopping',
-  SETTINGS = 'settings',
   ACTIVITY = 'activity'
 }

@@ -1,23 +1,25 @@
 
 {
   "short_name": "Hogar GNM",
-  "name": "Hogar Gómez-Naveira Mota: Gestión Familiar",
+  "name": "Hogar Gómez-Naveira Mota",
   "icons": [
     {
       "src": "https://cdn-icons-png.flaticon.com/512/263/263115.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "https://cdn-icons-png.flaticon.com/512/263/263115.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ],
-  "start_url": ".",
+  "start_url": "./index.html",
   "display": "standalone",
   "theme_color": "#4f46e5",
-  "background_color": "#f8fafc",
+  "background_color": "#ffffff",
   "orientation": "portrait",
   "lang": "es-ES",
   "description": "App para la gestión integral de tareas, planning semanal e imprevistos del hogar."
