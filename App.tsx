@@ -55,7 +55,10 @@ import {
   MessageSquare,
   Minus,
   Info,
-  Timer
+  Timer,
+  Smartphone,
+  Bell,
+  CheckCircle
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { AppData, Task, ShoppingItem, AppTab, Frequency, DayPlanning, UrgentNote, FamilyActivity, InventoryItem } from './types';
@@ -134,6 +137,7 @@ const App: React.FC = () => {
         if (!parsed.tasks || parsed.tasks.length === 0) parsed.tasks = DEFAULT_TASKS;
         if (!parsed.weeklyPlanning) parsed.weeklyPlanning = INITIAL_PLANNING;
         if (!parsed.laundry) parsed.laundry = INITIAL_DATA.laundry;
+        if (!parsed.urgentNotes) parsed.urgentNotes = [];
         return { ...INITIAL_DATA, ...parsed };
       } catch (e) {
         return INITIAL_DATA;
@@ -155,7 +159,10 @@ const App: React.FC = () => {
   const [currentCalendarMonth, setCurrentCalendarMonth] = useState(new Date());
   const [isSyncing, setIsSyncing] = useState(false);
   const [taskFilter, setTaskFilter] = useState<string>('all');
+  const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+
   const [showAddInventory, setShowAddInventory] = useState(false);
   const [selectedInventoryItem, setSelectedInventoryItem] = useState<InventoryItem | null>(null);
   const [newInvName, setNewInvName] = useState('');
@@ -173,29 +180,81 @@ const App: React.FC = () => {
   const today = new Date();
   const startOfThisWeek = startOfWeek(today, { weekStartsOn: 1 });
 
+  const showToast = (message: string) => {
+    setToast({ message, visible: true });
+    setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 3000);
+  };
+
   const laundryTimeRemaining = useMemo(() => {
     if (!data.laundry.isActive || !data.laundry.startTime) return 0;
     const start = parseISO(data.laundry.startTime);
     const elapsed = differenceInMinutes(new Date(), start);
     return Math.max(0, data.laundry.durationMinutes - elapsed);
-  }, [data.laundry, today]); // Recalcular con hoy/ahora
+  }, [data.laundry, today]);
+
+  useEffect(() => {
+    if (data.laundry.isActive && laundryTimeRemaining === 0 && !data.laundry.reminderSent) {
+      const laundryNoteId = 'laundry-urgent-note';
+      const exists = data.urgentNotes.some(n => n.id === laundryNoteId);
+      
+      if (!exists) {
+        const laundryNote: UrgentNote = {
+          id: laundryNoteId,
+          text: "Tender la ropa 🧺",
+          createdAt: new Date().toISOString(),
+          isResolved: false,
+          author: "Sistema"
+        };
+        
+        setData(prev => ({
+          ...prev,
+          urgentNotes: [laundryNote, ...prev.urgentNotes],
+          laundry: { ...prev.laundry, reminderSent: true }
+        }));
+        
+        logActivity('Ciclo de lavadora finalizado. Pendiente de tender.');
+      }
+    }
+  }, [laundryTimeRemaining, data.laundry.isActive, data.laundry.reminderSent]);
 
   const filteredTasks = useMemo(() => {
     if (taskFilter === 'all') return data.tasks;
     return data.tasks.filter(t => t.category === taskFilter);
   }, [data.tasks, taskFilter]);
 
+  const shoppingTotal = useMemo(() => {
+    return data.shoppingItems.reduce((acc, item) => acc + (item.price || 0), 0);
+  }, [data.shoppingItems]);
+
   useEffect(() => {
     localStorage.setItem('gnm_hogar_data', JSON.stringify(data));
   }, [data]);
 
   useEffect(() => {
+    const handleBeforeInstall = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+  }, []);
+
+  useEffect(() => {
     const interval = setInterval(() => {
       setIsSyncing(true);
-      setTimeout(() => setIsSyncing(false), 1200);
-    }, 20000);
+      setTimeout(() => setIsSyncing(false), 800);
+    }, 45000);
     return () => clearInterval(interval);
   }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null);
+    }
+  };
 
   const logActivity = (action: string) => {
     const newActivity: FamilyActivity = {
@@ -237,6 +296,7 @@ const App: React.FC = () => {
       updatePlanning(dayIdx, { sport: { carmen: isNowShift ? '🏥 Guardia' : '' } });
     }
     logActivity(`${isNowShift ? 'ha añadido' : 'ha quitado'} una guardia para el ${format(dateObj, 'd/MM')}`);
+    showToast(isNowShift ? 'Guardia añadida' : 'Guardia eliminada');
   };
 
   const handleSaveTask = () => {
@@ -254,6 +314,7 @@ const App: React.FC = () => {
         } : t)
       }));
       logActivity(`ha editado la tarea: ${newTaskTitle}`);
+      showToast('Tarea actualizada correctamente');
     } else {
       const newTask: Task = {
         id: Date.now().toString(),
@@ -266,6 +327,7 @@ const App: React.FC = () => {
       };
       setData(prev => ({ ...prev, tasks: [newTask, ...prev.tasks] }));
       logActivity(`ha creado la tarea: ${newTaskTitle}`);
+      showToast('Tarea guardada correctamente');
     }
     
     setNewTaskTitle('');
@@ -285,14 +347,34 @@ const App: React.FC = () => {
       }
     }));
     logActivity('ha puesto una lavadora 🧺');
+    showToast('Lavadora iniciada (90 min)');
   };
 
   const stopLaundry = () => {
     setData(prev => ({
       ...prev,
-      laundry: { ...prev.laundry, isActive: false, startTime: undefined }
+      laundry: { ...prev.laundry, isActive: false, startTime: undefined, reminderSent: false }
     }));
-    logActivity('ha terminado/quitado la lavadora');
+    setData(prev => ({
+      ...prev,
+      urgentNotes: prev.urgentNotes.filter(n => n.id !== 'laundry-urgent-note')
+    }));
+    logActivity('ha finalizado la gestión de la colada');
+    showToast('Lavadora detenida');
+  };
+
+  const handleResolveUrgentNote = (id: string) => {
+    if (id === 'laundry-urgent-note') {
+      stopLaundry();
+      logActivity('ha tendido la ropa');
+      showToast('¡Ropa tendida!');
+    } else {
+      setData(prev => ({
+        ...prev,
+        urgentNotes: prev.urgentNotes.filter(n => n.id !== id)
+      }));
+      showToast('Nota resuelta');
+    }
   };
 
   const handleAddInventory = () => {
@@ -309,7 +391,8 @@ const App: React.FC = () => {
       lastUpdatedAt: new Date().toISOString()
     };
     setData(prev => ({ ...prev, inventoryItems: [newItem, ...prev.inventoryItems] }));
-    logActivity(`ha añadido ${newInvName} al almacén (${newInvQty} ${newInvUnit})`);
+    logActivity(`ha añadido ${newInvName} al almacén`);
+    showToast('Producto añadido al almacén');
     resetInvForm();
     setShowAddInventory(false);
   };
@@ -331,13 +414,17 @@ const App: React.FC = () => {
       } : item)
     }));
     logActivity(`ha actualizado los detalles de ${newInvName}`);
+    showToast('Stock actualizado correctamente');
     setSelectedInventoryItem(null);
+    setShowAddInventory(false);
   };
 
   const updateInvQty = (id: string, delta: number) => {
+    let itemName = "";
     setData(prev => {
       const itemToUpdate = prev.inventoryItems.find(i => i.id === id);
       if (!itemToUpdate) return prev;
+      itemName = itemToUpdate.name;
       const newQty = Math.max(0, itemToUpdate.quantity + delta);
       return {
         ...prev,
@@ -346,13 +433,16 @@ const App: React.FC = () => {
         )
       };
     });
+    showToast(`${delta > 0 ? '+1' : '-1'} ${itemName}`);
   };
 
   const deleteInventoryItem = (id: string) => {
     const item = data.inventoryItems.find(i => i.id === id);
     setData(prev => ({ ...prev, inventoryItems: prev.inventoryItems.filter(i => i.id !== id) }));
     if (item) logActivity(`ha eliminado ${item.name} del almacén`);
+    showToast('Producto eliminado');
     setSelectedInventoryItem(null);
+    setShowAddInventory(false);
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -397,6 +487,7 @@ const App: React.FC = () => {
   const toggleUser = () => {
     const newUser = data.userName === 'Alberto' ? 'Carmen' : 'Alberto';
     setData(prev => ({ ...prev, userName: newUser }));
+    showToast(`Perfil de ${newUser}`);
   };
 
   const weekDaysShort = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
@@ -407,6 +498,14 @@ const App: React.FC = () => {
 
   return (
     <div className="max-w-md mx-auto min-h-screen bg-slate-50 flex flex-col relative pb-32">
+      {/* TOAST NOTIFICATION */}
+      <div className={`fixed top-8 left-1/2 -translate-x-1/2 z-[200] transition-all duration-500 transform ${toast.visible ? 'translate-y-0 opacity-100' : '-translate-y-16 opacity-0 pointer-events-none'}`}>
+         <div className="bg-slate-900/95 backdrop-blur-xl text-white px-6 py-4 rounded-[1.5rem] shadow-2xl flex items-center gap-3 border border-white/10">
+            <Bell size={18} className="text-indigo-400" />
+            <span className="text-xs font-black uppercase tracking-widest">{toast.message}</span>
+         </div>
+      </div>
+
       <header className="bg-white px-6 pt-12 pb-6 shadow-sm rounded-b-[2.5rem] sticky top-0 z-40 border-b border-slate-100">
         <div className="flex justify-between items-start mb-4">
           <div className="flex-1 min-w-0 pr-2">
@@ -456,6 +555,58 @@ const App: React.FC = () => {
       <main className="flex-1 overflow-y-auto px-4 py-6 space-y-6">
         {activeTab === AppTab.DASHBOARD && (
           <>
+            {/* BANNER DE GUARDIA PERSISTENTE */}
+            {currentSelectedIsShift && (
+              <section className="bg-orange-50 border border-orange-100 rounded-[2.5rem] p-6 flex items-center gap-5 shadow-sm animate-in zoom-in-95 duration-500">
+                <div className="w-14 h-14 bg-orange-500 rounded-2xl flex items-center justify-center text-white shrink-0 shadow-lg shadow-orange-100">
+                   <Stethoscope size={28} />
+                </div>
+                <div>
+                   <h3 className="text-sm font-black text-orange-900 leading-tight">Guardia de Carmen 🏥</h3>
+                   <p className="text-[11px] font-medium text-orange-700/80 mt-1">El horario de comidas y deporte se ha ajustado para hoy.</p>
+                </div>
+              </section>
+            )}
+
+            {data.urgentNotes.length > 0 && (
+              <section className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                <div className="flex items-center gap-2 px-2">
+                   <AlertCircle size={16} className="text-rose-500" />
+                   <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-500">Imprevistos y Avisos</h3>
+                </div>
+                {data.urgentNotes.map(note => (
+                  <div key={note.id} className="bg-rose-50 border border-rose-100 rounded-[2rem] p-5 flex items-center justify-between shadow-sm">
+                     <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-rose-500 shadow-sm"><Zap size={24} /></div>
+                        <div>
+                           <p className="text-sm font-black text-rose-900">{note.text}</p>
+                           <p className="text-[9px] font-bold text-rose-400 uppercase">Aviso generado por {note.author}</p>
+                        </div>
+                     </div>
+                     <button 
+                        onClick={() => handleResolveUrgentNote(note.id)} 
+                        className="px-5 py-3 bg-rose-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-90 transition-transform shadow-md"
+                      >
+                        {note.id === 'laundry-urgent-note' ? 'Tender' : 'Cerrar'}
+                     </button>
+                  </div>
+                ))}
+              </section>
+            )}
+
+            {deferredPrompt && (
+              <section className="bg-indigo-100 border border-indigo-200 rounded-[2rem] p-5 flex items-center justify-between animate-in zoom-in-95 duration-500">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-indigo-600 shadow-sm"><Smartphone size={24} /></div>
+                  <div>
+                    <p className="text-xs font-black text-indigo-900">App para el móvil</p>
+                    <p className="text-[10px] font-bold text-indigo-500 uppercase">Instala Hogar GNM en tu inicio</p>
+                  </div>
+                </div>
+                <button onClick={handleInstallClick} className="p-3 bg-indigo-600 text-white rounded-xl shadow-md active:scale-90 transition-transform"><Download size={20} /></button>
+              </section>
+            )}
+
             <section className="bg-gradient-to-br from-indigo-600 to-violet-700 rounded-[2.5rem] p-6 text-white shadow-xl shadow-indigo-200 overflow-hidden relative animate-in fade-in slide-in-from-top-4 duration-500">
               <Zap size={100} className="absolute -right-10 -top-10 text-white/10 rotate-12" />
               <div className="relative z-10 space-y-5">
@@ -477,7 +628,6 @@ const App: React.FC = () => {
               </div>
             </section>
 
-            {/* MÓDULO LAVADORA */}
             <section className="bg-white rounded-[2.5rem] p-6 shadow-sm border border-slate-100 space-y-4">
               <div className="flex justify-between items-center">
                 <h2 className="text-lg font-black text-slate-800 flex items-center gap-2"><Waves size={20} className="text-blue-500" /> Lavadora</h2>
@@ -490,7 +640,7 @@ const App: React.FC = () => {
                     <div className="w-10 h-10 bg-blue-500 rounded-2xl flex items-center justify-center text-white"><Clock size={18} /></div>
                     <div className="text-left">
                       <p className="text-sm font-black text-blue-800">Poner Lavadora</p>
-                      <p className="text-[10px] font-bold text-blue-400 uppercase">Duración aprox: 90 min</p>
+                      <p className="text-[10px] font-bold text-blue-400 uppercase">Duración: 90 min</p>
                     </div>
                   </div>
                   <Plus size={20} className="text-blue-600" />
@@ -499,10 +649,10 @@ const App: React.FC = () => {
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
                      <div>
-                        <p className="text-xs font-black text-slate-800">Lavadora puesta por {data.laundry.startedBy}</p>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase">Quedan aprox. {laundryTimeRemaining} minutos</p>
+                        <p className="text-xs font-black text-slate-800">Colada por {data.laundry.startedBy}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">Faltan aprox. {laundryTimeRemaining} min</p>
                      </div>
-                     <button onClick={stopLaundry} className="p-2 bg-rose-50 text-rose-500 rounded-xl"><Trash2 size={16} /></button>
+                     <button onClick={stopLaundry} className="p-2 bg-rose-50 text-rose-500 rounded-xl active:scale-90"><Trash2 size={16} /></button>
                   </div>
                   <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
                     <div 
@@ -511,34 +661,13 @@ const App: React.FC = () => {
                     ></div>
                   </div>
                   {laundryTimeRemaining === 0 && (
-                    <div className="bg-emerald-50 p-3 rounded-2xl flex items-center gap-3 text-emerald-600 border border-emerald-100 animate-bounce mt-2">
-                       <CheckCircle2 size={18} />
-                       <span className="text-[10px] font-black uppercase">¡Lavadora terminada! Hay que tender.</span>
+                    <div className="bg-emerald-50 p-4 rounded-2xl flex items-center gap-3 text-emerald-600 border border-emerald-100 animate-bounce mt-2 shadow-sm">
+                       <CheckCircle2 size={24} />
+                       <span className="text-xs font-black uppercase">¡Lavadora terminada! Tender ropa.</span>
                     </div>
                   )}
                 </div>
               )}
-            </section>
-            
-            <section className="bg-white rounded-[2.5rem] p-6 shadow-sm border border-slate-100 space-y-6">
-              <div className="flex justify-between items-center">
-                <h2 className="text-lg font-black text-slate-800 flex items-center gap-2"><CalendarIcon size={20} className="text-indigo-600" /> Planning Semanal</h2>
-                <button onClick={() => setShowEditPlanning(true)} className="text-[10px] bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-full font-bold uppercase tracking-wider">Planificar</button>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div onClick={() => setShowEditPlanning(true)} className="bg-orange-50/50 border border-orange-100 p-4 rounded-3xl active:bg-orange-100 cursor-pointer transition-all hover:shadow-md">
-                  <div className="flex items-center gap-2 text-orange-600 mb-3"><Dumbbell size={18} /><span className="text-xs font-bold uppercase">Deporte</span></div>
-                  <p className="text-[9px] text-orange-400 font-bold uppercase truncate">C: <span className="text-slate-700">{currentSelectedIsShift ? '🏥 Guardia' : (currentSelectedPlanning.sport?.carmen || '-')}</span></p>
-                  <p className="text-[9px] text-orange-400 font-bold uppercase truncate">A: <span className="text-slate-700">{currentSelectedPlanning.sport?.alberto || '-'}</span></p>
-                </div>
-                <div onClick={() => setShowEditPlanning(true)} className="bg-emerald-50/50 border border-emerald-100 p-4 rounded-3xl active:bg-emerald-100 cursor-pointer transition-all hover:shadow-md">
-                  <div className="flex items-center gap-2 text-emerald-600 mb-3"><Utensils size={18} /><span className="text-xs font-bold uppercase">Menú</span></div>
-                  <div className="space-y-1">
-                    <p className="text-[9px] text-emerald-400 font-bold uppercase truncate flex items-center gap-1"><Sun size={10} /> {currentSelectedIsShift ? (currentSelectedPlanning.meals?.albertoLunch || '-') : (currentSelectedPlanning.meals?.lunch || '-')}</p>
-                    <p className="text-[9px] text-indigo-400 font-bold uppercase truncate flex items-center gap-1"><Moon size={10} /> {currentSelectedIsShift ? (currentSelectedPlanning.meals?.albertoDinner || '-') : (currentSelectedPlanning.meals?.dinner || '-')}</p>
-                  </div>
-                </div>
-              </div>
             </section>
           </>
         )}
@@ -548,10 +677,10 @@ const App: React.FC = () => {
             <div className="flex justify-between items-end mb-2">
               <div>
                 <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">Tareas <CheckCircle2 className="text-indigo-600" /></h2>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Organización del Hogar</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Hogar GNM</p>
               </div>
-              <button onClick={() => { setEditingTask(null); resetInvForm(); setShowAddTask(true); }} className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg active:scale-95 transition-all">
-                <Plus size={20} />
+              <button onClick={() => { setEditingTask(null); resetInvForm(); setShowAddTask(true); }} className="p-4 bg-indigo-600 text-white rounded-2xl shadow-lg active:scale-95 transition-all">
+                <Plus size={24} />
               </button>
             </div>
 
@@ -568,30 +697,26 @@ const App: React.FC = () => {
               {filteredTasks.length > 0 ? filteredTasks.map(task => {
                 const category = CATEGORIES.find(c => c.id === task.category);
                 return (
-                  <div key={task.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4 group transition-all hover:shadow-md">
+                  <div key={task.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4 group transition-all active:bg-slate-50">
                     <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${category?.color || 'bg-slate-100 text-slate-400'}`}>
                       {category?.icon || <LayoutGrid size={18} />}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-slate-800 truncate">{task.title}</p>
                       <div className="flex items-center gap-2 mt-1">
-                         <span className="text-[9px] font-black uppercase text-indigo-400/80">{task.frequency === 'periodic' ? `Cada ${task.intervalDays} días` : (task.frequency === 'daily' ? 'Diario' : 'Semanal')}</span>
+                         <span className="text-[9px] font-black uppercase text-indigo-400/80">{task.frequency === 'daily' ? 'Diario' : 'Semanal'}</span>
                          <span className="w-1 h-1 rounded-full bg-slate-200"></span>
                          <span className="text-[9px] font-bold text-slate-400 uppercase">{task.category}</span>
                       </div>
                     </div>
-                    <div className="flex gap-1">
-                        <button onClick={() => openEditTask(task)} className="p-2 text-slate-300 hover:text-indigo-500 transition-colors">
-                            <Edit2 size={16} />
-                        </button>
-                        <button onClick={() => { setData(prev => ({...prev, tasks: prev.tasks.filter(t => t.id !== task.id)})); logActivity(`ha eliminado: ${task.title}`); }} className="p-2 text-slate-200 hover:text-rose-500 transition-colors">
-                            <Trash2 size={18} />
-                        </button>
+                    <div className="flex gap-2">
+                        <button onClick={() => openEditTask(task)} className="p-3 bg-slate-50 text-slate-400 rounded-xl active:text-indigo-600 active:bg-indigo-50"><Edit2 size={18} /></button>
+                        <button onClick={() => { setData(prev => ({...prev, tasks: prev.tasks.filter(t => t.id !== task.id)})); logActivity(`ha borrado la tarea: ${task.title}`); showToast('Tarea eliminada'); }} className="p-3 bg-slate-50 text-slate-300 rounded-xl active:text-rose-600 active:bg-rose-50"><Trash2 size={18} /></button>
                     </div>
                   </div>
                 );
               }) : (
-                <div className="py-20 text-center text-slate-300">No hay tareas en esta categoría</div>
+                <div className="py-20 text-center text-slate-300">No hay tareas aquí</div>
               )}
             </div>
           </div>
@@ -602,10 +727,10 @@ const App: React.FC = () => {
             <div className="flex justify-between items-end">
               <div>
                 <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">Almacén <Package className="text-amber-500" /></h2>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Control de recursos</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Stock familiar</p>
               </div>
-              <button onClick={() => { setSelectedInventoryItem(null); resetInvForm(); setShowAddInventory(true); }} className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg active:scale-95 transition-all">
-                <Plus size={20} />
+              <button onClick={() => { setSelectedInventoryItem(null); resetInvForm(); setShowAddInventory(true); }} className="p-4 bg-indigo-600 text-white rounded-2xl shadow-lg active:scale-95 transition-all">
+                <Plus size={24} />
               </button>
             </div>
 
@@ -614,7 +739,7 @@ const App: React.FC = () => {
                 <div key={item.id} className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden flex flex-col active:shadow-md transition-all">
                    <div onClick={() => openEditInventory(item)} className="aspect-square bg-slate-50 relative overflow-hidden group">
                       {item.image ? (
-                        <img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                        <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-slate-200">
                           <Package size={48} />
@@ -629,17 +754,29 @@ const App: React.FC = () => {
                         <h4 className="font-black text-slate-800 text-sm truncate">{item.name}</h4>
                         <p className="text-[10px] font-bold text-slate-400 uppercase">{item.quantity} {item.unit}</p>
                       </div>
-                      <div className="flex items-center justify-between bg-slate-50 rounded-xl p-1">
-                         <button onClick={(e) => { e.stopPropagation(); updateInvQty(item.id, -1); }} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm text-rose-500 active:scale-90"><Minus size={14} /></button>
-                         <span className="text-xs font-black text-slate-700">{item.quantity}</span>
-                         <button onClick={(e) => { e.stopPropagation(); updateInvQty(item.id, 1); }} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm text-emerald-500 active:scale-90"><Plus size={14} /></button>
+                      <div className="flex items-center justify-between bg-slate-50 rounded-2xl p-1 shadow-inner border border-slate-100">
+                         <button 
+                            onClick={(e) => { e.stopPropagation(); updateInvQty(item.id, -1); }} 
+                            className="w-12 h-12 flex items-center justify-center bg-white rounded-xl shadow-sm text-rose-500 active:scale-90 border border-slate-100"
+                            aria-label="Restar cantidad"
+                         >
+                            <Minus size={20} strokeWidth={3} />
+                         </button>
+                         <span className="text-sm font-black text-slate-800 w-8 text-center tabular-nums">{item.quantity}</span>
+                         <button 
+                            onClick={(e) => { e.stopPropagation(); updateInvQty(item.id, 1); }} 
+                            className="w-12 h-12 flex items-center justify-center bg-white rounded-xl shadow-sm text-emerald-500 active:scale-90 border border-slate-100"
+                            aria-label="Sumar cantidad"
+                         >
+                            <Plus size={20} strokeWidth={3} />
+                         </button>
                       </div>
                    </div>
                 </div>
               )) : (
                 <div className="col-span-2 py-20 text-center text-slate-300">
                   <Package size={48} className="mx-auto mb-4 opacity-20" />
-                  <p className="text-sm font-bold">El almacén está vacío</p>
+                  <p className="text-sm font-bold">Stock vacío</p>
                 </div>
               )}
             </div>
@@ -648,64 +785,30 @@ const App: React.FC = () => {
 
         {activeTab === AppTab.SHOPPING && (
             <div className="px-2">
-                <h2 className="text-2xl font-black text-slate-800 mb-6 flex items-center gap-3">Lista de Compra <ShoppingCart className="text-emerald-500" /></h2>
+                <div className="flex justify-between items-end mb-6">
+                    <div>
+                        <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">Lista de Compra <ShoppingCart className="text-emerald-500" /></h2>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Total estimado en lista</p>
+                    </div>
+                    <div className="bg-emerald-100 text-emerald-700 px-5 py-3 rounded-2xl text-base font-black shadow-sm flex items-center gap-2 border border-emerald-200">
+                        <Euro size={18} />
+                        {shoppingTotal.toFixed(2)}€
+                    </div>
+                </div>
                 <ShoppingList 
                   items={data.shoppingItems} 
                   onToggle={(id) => setData(prev => ({...prev, shoppingItems: prev.shoppingItems.map(i => i.id === id ? {...i, completed: !i.completed} : i)}))} 
                   onAdd={(name, price) => setData(prev => ({...prev, shoppingItems: [...prev.shoppingItems, {id: Date.now().toString(), name, price: price || 0, completed: false, category: 'Alimentación'}]}))} 
+                  onDelete={(id) => setData(prev => ({...prev, shoppingItems: prev.shoppingItems.filter(i => i.id !== id)}))}
                 />
             </div>
-        )}
-
-        {activeTab === AppTab.WEEKLY && (
-          <div className="space-y-6 px-2 animate-in fade-in duration-500">
-            <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">Semana Completa <CalendarRange className="text-indigo-600" /></h2>
-            <div className="space-y-4">
-              {fullWeekDays.map((day, idx) => {
-                const dayISO = format(addDays(startOfThisWeek, idx), 'yyyy-MM-dd');
-                const isShift = data.shifts.includes(dayISO);
-                const plan = data.weeklyPlanning[idx] || { sport: { carmen: '', alberto: '' }, meals: { lunch: '', dinner: '' } };
-                return (
-                  <div key={idx} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm flex items-start gap-4">
-                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 font-black text-sm ${isShift ? 'bg-orange-500 text-white' : 'bg-slate-50 text-slate-400'}`}>
-                      {weekDaysShort[idx]}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-[10px] font-black uppercase text-slate-400">{day}</span>
-                        {isShift && <span className="text-[8px] font-black uppercase text-orange-500 flex items-center gap-1"><Stethoscope size={8} /> Guardia</span>}
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <div className="flex gap-4">
-                           <p className="text-[11px] font-bold text-slate-600 truncate"><Sun size={10} className="inline mr-1 text-emerald-500" /> {plan.meals?.lunch || '-'}</p>
-                           <p className="text-[11px] font-bold text-slate-600 truncate"><Moon size={10} className="inline mr-1 text-indigo-500" /> {plan.meals?.dinner || '-'}</p>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                           { (plan.sport?.carmen || isShift) && (
-                             <span className="text-[9px] font-black text-orange-600 bg-orange-50 px-2 py-0.5 rounded-lg flex items-center gap-1">
-                               <Dumbbell size={9} /> C: {isShift ? 'Guardia' : plan.sport?.carmen}
-                             </span>
-                           )}
-                           { plan.sport?.alberto && (
-                             <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg flex items-center gap-1">
-                               <Dumbbell size={9} /> A: {plan.sport?.alberto}
-                             </span>
-                           )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
         )}
 
         {activeTab === AppTab.ACTIVITY && (
             <div className="space-y-6 animate-in fade-in duration-500 pb-10">
                 <div className="px-2">
-                    <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">Cambios Recientes <History className="text-indigo-600" /></h2>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Registro de actividad familiar</p>
+                    <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">Historial <History className="text-indigo-600" /></h2>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Últimos cambios en el hogar</p>
                 </div>
                 <div className="space-y-3 px-2">
                     {data.familyActivity.length > 0 ? data.familyActivity.map(item => (
@@ -719,7 +822,7 @@ const App: React.FC = () => {
                             </div>
                         </div>
                     )) : (
-                        <div className="py-20 text-center text-slate-300">No hay cambios registrados todavía</div>
+                        <div className="py-20 text-center text-slate-300 uppercase font-black text-xs tracking-widest">Sin actividad</div>
                     )}
                 </div>
             </div>
@@ -735,47 +838,47 @@ const App: React.FC = () => {
         <NavButton active={activeTab === AppTab.ACTIVITY} onClick={() => setActiveTab(AppTab.ACTIVITY)} icon={<History size={20} />} label="Cambios" />
       </nav>
 
-      {/* MODAL EDITAR/AÑADIR ALMACÉN */}
+      {/* MODALES REUTILIZADOS */}
       {showAddInventory && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-end justify-center" onClick={() => { setShowAddInventory(false); resetInvForm(); setSelectedInventoryItem(null); }}>
           <div className="bg-white w-full max-w-md rounded-t-[3rem] p-8 pb-12 shadow-2xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-black flex items-center gap-3">{selectedInventoryItem ? 'Editar Producto' : 'Añadir al Almacén'}</h3>
-                <button onClick={() => { setShowAddInventory(false); resetInvForm(); setSelectedInventoryItem(null); }} className="p-2 bg-slate-100 rounded-full text-slate-400"><X size={20} /></button>
+                <h3 className="text-xl font-black">{selectedInventoryItem ? 'Editar Stock' : 'Añadir Stock'}</h3>
+                <button onClick={() => { setShowAddInventory(false); resetInvForm(); setSelectedInventoryItem(null); }} className="p-3 bg-slate-100 rounded-full text-slate-400"><X size={24} /></button>
              </div>
              <div className="space-y-6">
                 <div className="flex gap-4">
-                  <div onClick={() => fileInputRef.current?.click()} className="w-24 h-24 rounded-3xl bg-slate-50 border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400 gap-1 overflow-hidden shrink-0 cursor-pointer">
-                    {newInvImage ? <img src={newInvImage} className="w-full h-full object-cover" /> : <><Camera size={24} /><span className="text-[7px] font-black uppercase">Foto</span></>}
+                  <div onClick={() => fileInputRef.current?.click()} className="w-28 h-28 rounded-3xl bg-slate-50 border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400 gap-1 overflow-hidden shrink-0 cursor-pointer">
+                    {newInvImage ? <img src={newInvImage} className="w-full h-full object-cover" /> : <><Camera size={28} /><span className="text-[8px] font-black uppercase">Foto</span></>}
                     <input type="file" ref={fileInputRef} onChange={handleImageChange} accept="image/*" className="hidden" />
                   </div>
                   <div className="flex-1 space-y-4">
-                    <input type="text" placeholder="Producto" value={newInvName} onChange={e => setNewInvName(e.target.value)} className="w-full p-4 bg-slate-50 rounded-xl font-bold border-none outline-none text-sm" />
-                    <select value={newInvCategory} onChange={e => setNewInvCategory(e.target.value)} className="w-full p-3 bg-slate-50 rounded-xl font-bold border-none text-xs">
-                       <option value="Cocina">Cocina / Alimentación</option>
+                    <input type="text" placeholder="¿Qué producto es?" value={newInvName} onChange={e => setNewInvName(e.target.value)} className="w-full p-4 bg-slate-50 rounded-xl font-bold border-none outline-none text-sm" />
+                    <select value={newInvCategory} onChange={e => setNewInvCategory(e.target.value)} className="w-full p-4 bg-slate-50 rounded-xl font-bold border-none text-xs">
+                       <option value="Cocina">Cocina / Comida</option>
                        <option value="Limpieza">Limpieza</option>
-                       <option value="Higiene">Higiene</option>
                        <option value="Mascotas">Mascotas</option>
+                       <option value="Higiene">Higiene</option>
                        <option value="Mantenimiento">Mantenimiento</option>
                     </select>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-4">
                    <div className="space-y-2">
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">Cantidad</label>
-                      <input type="number" placeholder="Cant." value={newInvQty} onChange={e => setNewInvQty(parseInt(e.target.value) || 0)} className="w-full p-3 bg-slate-50 rounded-xl font-bold border-none" />
+                     <label className="text-[8px] font-black uppercase text-slate-400 ml-1">Cantidad</label>
+                     <input type="number" value={newInvQty} onChange={e => setNewInvQty(parseInt(e.target.value) || 0)} className="w-full p-4 bg-slate-50 rounded-xl font-bold border-none" />
                    </div>
                    <div className="space-y-2">
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">Unidad</label>
-                      <input type="text" placeholder="Ud. (kg, ud, l...)" value={newInvUnit} onChange={e => setNewInvUnit(e.target.value)} className="w-full p-3 bg-slate-50 rounded-xl font-bold border-none text-xs" />
+                     <label className="text-[8px] font-black uppercase text-slate-400 ml-1">Unidad</label>
+                     <input type="text" value={newInvUnit} onChange={e => setNewInvUnit(e.target.value)} className="w-full p-4 bg-slate-50 rounded-xl font-bold border-none text-xs" />
                    </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-3">
                    {selectedInventoryItem && (
-                     <button onClick={() => deleteInventoryItem(selectedInventoryItem.id)} className="p-5 bg-rose-50 text-rose-500 rounded-2xl active:scale-95 transition-all"><Trash2 size={20} /></button>
+                     <button onClick={() => deleteInventoryItem(selectedInventoryItem.id)} className="p-5 bg-rose-50 text-rose-500 rounded-2xl active:scale-95 transition-all"><Trash2 size={24} /></button>
                    )}
-                   <button onClick={selectedInventoryItem ? handleUpdateInventory : handleAddInventory} className="flex-1 p-5 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-all uppercase tracking-widest text-xs">
-                      {selectedInventoryItem ? 'Actualizar Producto' : 'Guardar en Almacén'}
+                   <button onClick={selectedInventoryItem ? handleUpdateInventory : handleAddInventory} className="flex-1 p-5 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-all uppercase tracking-[0.1em] text-xs">
+                      Guardar en Almacén
                    </button>
                 </div>
              </div>
@@ -783,50 +886,42 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL EDITAR/AÑADIR TAREA */}
       {showAddTask && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-end justify-center" onClick={() => { setShowAddTask(false); setEditingTask(null); }}>
           <div className="bg-white w-full max-md rounded-t-[3rem] p-8 pb-12 shadow-2xl" onClick={e => e.stopPropagation()}>
              <div className="flex justify-between items-center mb-6">
                 <h3 className="text-xl font-black">{editingTask ? 'Editar Tarea' : 'Nueva Tarea'}</h3>
-                <button onClick={() => { setShowAddTask(false); setEditingTask(null); }} className="p-2 bg-slate-100 rounded-full text-slate-400"><X size={20} /></button>
+                <button onClick={() => { setShowAddTask(false); setEditingTask(null); }} className="p-3 bg-slate-100 rounded-full text-slate-400"><X size={24} /></button>
              </div>
-             <div className="space-y-4">
-                <input type="text" placeholder="¿Qué hay que hacer?" value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none text-sm" />
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <label className="text-[8px] font-black uppercase text-slate-400 ml-1">Categoría</label>
+             <div className="space-y-5">
+                <input type="text" placeholder="Ej: Cambiar filtro aire" value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} className="w-full p-5 bg-slate-50 rounded-2xl font-bold outline-none text-sm" />
+                <div className="grid grid-cols-2 gap-4">
                     <select value={newTaskCategory} onChange={e => setNewTaskCategory(e.target.value)} className="w-full p-4 bg-slate-50 rounded-xl font-bold text-xs border-none outline-none">
                       {CATEGORIES.map(cat => <option key={cat.id} value={cat.id}>{cat.label}</option>)}
                     </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[8px] font-black uppercase text-slate-400 ml-1">Frecuencia</label>
                     <select value={newTaskFreq} onChange={e => setNewTaskFreq(e.target.value as Frequency)} className="w-full p-4 bg-slate-50 rounded-xl font-bold text-xs border-none outline-none">
                       <option value="daily">Diaria</option>
                       <option value="weekly">Semanal</option>
-                      <option value="periodic">Periódica</option>
+                      <option value="periodic">Cada X días</option>
                     </select>
-                  </div>
                 </div>
-                <button onClick={handleSaveTask} className="w-full p-5 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-all uppercase tracking-widest text-xs">
-                   {editingTask ? 'Guardar Cambios' : 'Crear Tarea'}
+                <button onClick={handleSaveTask} className="w-full p-5 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-all uppercase tracking-[0.1em] text-xs">
+                   Confirmar Tarea
                 </button>
              </div>
           </div>
         </div>
       )}
 
-      {/* MODAL PLANIFICACIÓN SEMANAL */}
       {showEditPlanning && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-end justify-center" onClick={() => setShowEditPlanning(false)}>
           <div className="bg-white w-full max-md rounded-t-[3rem] p-8 pb-12 shadow-2xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-black flex items-center gap-3">Planificar {fullWeekDays[selectedDayIndex]} <Edit2 className="text-indigo-600" /></h3>
-                <button onClick={() => setShowEditPlanning(false)} className="p-2 bg-slate-100 rounded-full text-slate-400"><X size={20} /></button>
+                <h3 className="text-xl font-black">{fullWeekDays[selectedDayIndex]}</h3>
+                <button onClick={() => setShowEditPlanning(false)} className="p-3 bg-slate-100 rounded-full text-slate-400"><X size={24} /></button>
              </div>
              <div className="space-y-6">
-                <div className="p-5 bg-indigo-50/50 rounded-[2rem] border border-indigo-100 space-y-4">
+                <div className="p-6 bg-indigo-50/50 rounded-[2rem] border border-indigo-100 space-y-5">
                   <div className="space-y-2">
                     <label className="text-[8px] font-black uppercase text-slate-400 ml-1">Comida</label>
                     <input type="text" value={currentSelectedPlanning.meals?.lunch || ''} onChange={(e) => updatePlanning(selectedDayIndex, { meals: { lunch: e.target.value } })} placeholder="¿Qué comemos?" className="w-full p-4 bg-white rounded-xl border-none font-bold text-sm shadow-sm outline-none" />
@@ -835,18 +930,12 @@ const App: React.FC = () => {
                     <label className="text-[8px] font-black uppercase text-slate-400 ml-1">Cena</label>
                     <input type="text" value={currentSelectedPlanning.meals?.dinner || ''} onChange={(e) => updatePlanning(selectedDayIndex, { meals: { dinner: e.target.value } })} placeholder="¿Qué cenamos?" className="w-full p-4 bg-white rounded-xl border-none font-bold text-sm shadow-sm outline-none" />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">Dep. Carmen</label>
-                      <input type="text" value={currentSelectedPlanning.sport?.carmen || ''} onChange={(e) => updatePlanning(selectedDayIndex, { sport: { carmen: e.target.value } })} placeholder="Deporte C" className="w-full p-3 bg-white rounded-xl border-none font-bold text-xs shadow-sm outline-none" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">Dep. Alberto</label>
-                      <input type="text" value={currentSelectedPlanning.sport?.alberto || ''} onChange={(e) => updatePlanning(selectedDayIndex, { sport: { alberto: e.target.value } })} placeholder="Deporte A" className="w-full p-3 bg-white rounded-xl border-none font-bold text-xs shadow-sm outline-none" />
-                    </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <input type="text" value={currentSelectedPlanning.sport?.carmen || ''} onChange={(e) => updatePlanning(selectedDayIndex, { sport: { carmen: e.target.value } })} placeholder="Dep. Carmen" className="w-full p-4 bg-white rounded-xl border-none font-bold text-xs shadow-sm outline-none" />
+                    <input type="text" value={currentSelectedPlanning.sport?.alberto || ''} onChange={(e) => updatePlanning(selectedDayIndex, { sport: { alberto: e.target.value } })} placeholder="Dep. Alberto" className="w-full p-4 bg-white rounded-xl border-none font-bold text-xs shadow-sm outline-none" />
                   </div>
                 </div>
-                <button onClick={() => { setShowEditPlanning(false); logActivity(`ha actualizado el planning del ${fullWeekDays[selectedDayIndex]}`); }} className="w-full p-5 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-all uppercase tracking-widest text-xs">Guardar Planning</button>
+                <button onClick={() => { setShowEditPlanning(false); logActivity(`ha actualizado el planning del ${fullWeekDays[selectedDayIndex]}`); showToast('Semana guardada'); }} className="w-full p-5 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-all uppercase tracking-widest text-xs">Guardar Planning</button>
              </div>
           </div>
         </div>
@@ -858,9 +947,9 @@ const App: React.FC = () => {
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-lg font-black text-slate-800 flex items-center gap-3"><Stethoscope className="text-orange-500" /> Guardias Carmen</h3>
               <div className="flex items-center gap-2">
-                <button onClick={() => setCurrentCalendarMonth(prev => subMonths(prev, 1))} className="p-1 hover:bg-slate-100 rounded-lg text-slate-400"><ChevronLeft size={16} /></button>
-                <span className="text-[10px] font-black uppercase text-slate-500 min-w-[80px] text-center">{format(currentCalendarMonth, 'MMMM yyyy', { locale: es })}</span>
-                <button onClick={() => setCurrentCalendarMonth(prev => addMonths(prev, 1))} className="p-1 hover:bg-slate-100 rounded-lg text-slate-400"><ChevronRight size={16} /></button>
+                <button onClick={() => setCurrentCalendarMonth(prev => subMonths(prev, 1))} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400"><ChevronLeft size={20} /></button>
+                <span className="text-[10px] font-black uppercase text-slate-500 min-w-[80px] text-center">{format(currentCalendarMonth, 'MMM yy', { locale: es })}</span>
+                <button onClick={() => setCurrentCalendarMonth(prev => addMonths(prev, 1))} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400"><ChevronRight size={20} /></button>
               </div>
             </div>
             <div className="grid grid-cols-7 gap-1">
@@ -868,7 +957,7 @@ const App: React.FC = () => {
                 const dayISO = format(day, 'yyyy-MM-dd');
                 const isShift = data.shifts.includes(dayISO);
                 return (
-                  <button key={dayISO} onClick={() => handleToggleShift(dayISO)} className={`h-10 rounded-xl flex flex-col items-center justify-center transition-all ${isShift ? 'bg-orange-500 text-white shadow-md' : 'bg-slate-50 text-slate-400'}`}>
+                  <button key={dayISO} onClick={() => handleToggleShift(dayISO)} className={`h-11 rounded-xl flex flex-col items-center justify-center transition-all ${isShift ? 'bg-orange-500 text-white shadow-md' : 'bg-slate-50 text-slate-400'}`}>
                     <span className="text-[11px] font-black">{format(day, 'd')}</span>
                   </button>
                 );
@@ -881,7 +970,7 @@ const App: React.FC = () => {
   );
 };
 
-const ShoppingList: React.FC<{ items: ShoppingItem[]; onToggle: (id: string) => void; onAdd: (name: string, price: number) => void }> = ({ items, onToggle, onAdd }) => {
+const ShoppingList: React.FC<{ items: ShoppingItem[]; onToggle: (id: string) => void; onAdd: (name: string, price: number) => void; onDelete: (id: string) => void }> = ({ items, onToggle, onAdd, onDelete }) => {
   const [n, setN] = useState('');
   const [p, setP] = useState('');
   const [isEstimating, setIsEstimating] = useState(false);
@@ -904,7 +993,7 @@ const ShoppingList: React.FC<{ items: ShoppingItem[]; onToggle: (id: string) => 
               properties: {
                 estimatedPrice: {
                   type: Type.NUMBER,
-                  description: "El precio estimado en euros (EUR) para una unidad o paquete estándar."
+                  description: "El precio estimado en euros (EUR) para una unidad estándar."
                 }
               },
               required: ["estimatedPrice"]
@@ -932,15 +1021,15 @@ const ShoppingList: React.FC<{ items: ShoppingItem[]; onToggle: (id: string) => 
         <div className="flex gap-2">
           <input 
             type="text" 
-            placeholder="Producto..." 
+            placeholder="¿Qué falta?" 
             value={n} 
             onChange={(e) => setN(e.target.value)} 
             className="flex-1 bg-slate-50 p-4 rounded-xl font-bold outline-none border-none text-sm" 
           />
-          <div className="relative w-28">
+          <div className="relative w-32">
             <input 
               type="number" 
-              placeholder="Precio" 
+              placeholder="0.00" 
               value={p} 
               onChange={(e) => setP(e.target.value)} 
               className="w-full bg-slate-50 p-4 rounded-xl font-bold outline-none border-none text-sm pr-6" 
@@ -951,10 +1040,10 @@ const ShoppingList: React.FC<{ items: ShoppingItem[]; onToggle: (id: string) => 
         <button 
           onClick={handleAdd} 
           disabled={isEstimating} 
-          className="w-full p-4 bg-indigo-600 text-white rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2 font-black text-[10px] uppercase tracking-[0.1em]"
+          className="w-full p-4 bg-indigo-600 text-white rounded-2xl shadow-md active:scale-95 flex items-center justify-center gap-2 font-black text-[10px] uppercase tracking-[0.2em]"
         >
-          {isEstimating ? <RefreshCw className="animate-spin" size={16} /> : <Plus size={16} />}
-          {isEstimating ? 'Calculando...' : 'Añadir a la lista'}
+          {isEstimating ? <RefreshCw className="animate-spin" size={18} /> : <Plus size={18} />}
+          {isEstimating ? 'Estimando...' : 'Añadir a la lista'}
         </button>
       </div>
 
@@ -962,7 +1051,7 @@ const ShoppingList: React.FC<{ items: ShoppingItem[]; onToggle: (id: string) => 
         {items.map(item => (
           <div key={item.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4 animate-in slide-in-from-bottom-2 duration-300">
             <button onClick={() => onToggle(item.id)} className={item.completed ? 'text-emerald-500' : 'text-slate-200'}>
-              {item.completed ? <CheckCircle2 size={24} fill="currentColor" /> : <Circle size={24} />}
+              {item.completed ? <CheckCircle2 size={28} fill="currentColor" /> : <Circle size={28} />}
             </button>
             <div className="flex-1 min-w-0">
                 <p className={`font-bold text-sm truncate ${item.completed ? 'line-through text-slate-400' : 'text-slate-800'}`}>{item.name}</p>
@@ -970,12 +1059,13 @@ const ShoppingList: React.FC<{ items: ShoppingItem[]; onToggle: (id: string) => 
                   <Euro size={10} /> {item.price?.toFixed(2)}€
                 </p>
             </div>
+            <button onClick={() => onDelete(item.id)} className="p-3 text-slate-200 hover:text-rose-500 transition-colors active:bg-rose-50 rounded-xl"><Trash2 size={18} /></button>
           </div>
         ))}
         {items.length === 0 && (
           <div className="py-20 text-center text-slate-300 opacity-50">
-            <ShoppingBasket size={48} className="mx-auto mb-4" />
-            <p className="text-sm font-bold uppercase tracking-widest">Lista vacía</p>
+            <ShoppingBasket size={64} className="mx-auto mb-4" />
+            <p className="text-sm font-black uppercase tracking-widest">Lista vacía</p>
           </div>
         )}
       </div>
@@ -985,7 +1075,7 @@ const ShoppingList: React.FC<{ items: ShoppingItem[]; onToggle: (id: string) => 
 
 const NavButton: React.FC<{ active: boolean; onClick: () => void; icon: React.ReactNode; label: string }> = ({ active, onClick, icon, label }) => (
   <button onClick={onClick} className={`flex flex-col items-center gap-1 transition-all duration-300 flex-1 ${active ? 'text-indigo-600 scale-105' : 'text-slate-300'}`}>
-    <div className={`p-1.5 rounded-xl transition-all ${active ? 'bg-indigo-50 shadow-sm' : ''}`}>
+    <div className={`p-2 rounded-xl transition-all ${active ? 'bg-indigo-50 shadow-sm' : ''}`}>
       {icon}
     </div>
     <span className="text-[7px] font-black uppercase tracking-tight">{label}</span>
