@@ -54,7 +54,8 @@ import {
   Camera,
   MessageSquare,
   Minus,
-  Info
+  Info,
+  Timer
 } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { AppData, Task, ShoppingItem, AppTab, Frequency, DayPlanning, UrgentNote, FamilyActivity, InventoryItem } from './types';
@@ -73,18 +74,19 @@ import {
   addMonths, 
   subMonths, 
   formatDistanceToNow,
-  isToday
+  isToday,
+  differenceInMinutes
 } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 const CATEGORIES = [
-  { id: 'General', label: 'General', icon: <LayoutGrid size={18} /> },
-  { id: 'Limpieza', label: 'Limpieza', icon: <Sparkles size={18} /> },
-  { id: 'Mascotas', label: 'Mascotas', icon: <Cat size={18} /> },
-  { id: 'Mantenimiento', label: 'Mantenimiento', icon: <Wrench size={18} /> },
-  { id: 'Compras', label: 'Compras', icon: <ShoppingBag size={18} /> },
-  { id: 'Cocina', label: 'Cocina', icon: <Coffee size={18} /> },
-  { id: 'Personal', label: 'Personal', icon: <User size={18} /> },
+  { id: 'General', label: 'General', icon: <LayoutGrid size={18} />, color: 'bg-slate-100 text-slate-600' },
+  { id: 'Limpieza', label: 'Limpieza', icon: <Sparkles size={18} />, color: 'bg-blue-100 text-blue-600' },
+  { id: 'Mascotas', label: 'Mascotas', icon: <Cat size={18} />, color: 'bg-orange-100 text-orange-600' },
+  { id: 'Mantenimiento', label: 'Mantenimiento', icon: <Wrench size={18} />, color: 'bg-amber-100 text-amber-600' },
+  { id: 'Compras', label: 'Compras', icon: <ShoppingBag size={18} />, color: 'bg-emerald-100 text-emerald-600' },
+  { id: 'Cocina', label: 'Cocina', icon: <Coffee size={18} />, color: 'bg-rose-100 text-rose-600' },
+  { id: 'Personal', label: 'Personal', icon: <User size={18} />, color: 'bg-indigo-100 text-indigo-600' },
 ];
 
 const INITIAL_PLANNING: Record<number, DayPlanning> = {
@@ -123,6 +125,7 @@ const App: React.FC = () => {
         if (!parsed.inventoryItems) parsed.inventoryItems = INITIAL_DATA.inventoryItems;
         if (!parsed.tasks) parsed.tasks = [];
         if (!parsed.weeklyPlanning) parsed.weeklyPlanning = INITIAL_PLANNING;
+        if (!parsed.laundry) parsed.laundry = INITIAL_DATA.laundry;
         return { ...INITIAL_DATA, ...parsed };
       } catch (e) {
         return INITIAL_DATA;
@@ -140,7 +143,7 @@ const App: React.FC = () => {
   const [showAddTask, setShowAddTask] = useState(false);
   const [showEditPlanning, setShowEditPlanning] = useState(false);
   const [showShiftCalendar, setShowShiftCalendar] = useState(false);
-  const [isGeneratingMenu, setIsGeneratingMenu] = useState(false);
+  // Fix: add missing currentCalendarMonth state for the calendar modal
   const [currentCalendarMonth, setCurrentCalendarMonth] = useState(new Date());
   const [isSyncing, setIsSyncing] = useState(false);
   
@@ -161,6 +164,14 @@ const App: React.FC = () => {
 
   const today = new Date();
   const startOfThisWeek = startOfWeek(today, { weekStartsOn: 1 });
+
+  // Laundry helper
+  const laundryTimeRemaining = useMemo(() => {
+    if (!data.laundry.isActive || !data.laundry.startTime) return 0;
+    const start = parseISO(data.laundry.startTime);
+    const elapsed = differenceInMinutes(new Date(), start);
+    return Math.max(0, data.laundry.durationMinutes - elapsed);
+  }, [data.laundry]);
 
   useEffect(() => {
     localStorage.setItem('gnm_hogar_data', JSON.stringify(data));
@@ -231,6 +242,28 @@ const App: React.FC = () => {
     logActivity(`ha creado la tarea: ${newTaskTitle}`);
     setNewTaskTitle('');
     setShowAddTask(false);
+  };
+
+  const startLaundry = () => {
+    setData(prev => ({
+      ...prev,
+      laundry: {
+        isActive: true,
+        startTime: new Date().toISOString(),
+        reminderSent: false,
+        durationMinutes: 90,
+        startedBy: prev.userName
+      }
+    }));
+    logActivity('ha puesto una lavadora 🧺');
+  };
+
+  const stopLaundry = () => {
+    setData(prev => ({
+      ...prev,
+      laundry: { ...prev.laundry, isActive: false, startTime: undefined }
+    }));
+    logActivity('ha terminado/quitado la lavadora');
   };
 
   const handleAddInventory = () => {
@@ -433,32 +466,77 @@ const App: React.FC = () => {
         )}
 
         {activeTab === AppTab.TASKS && (
-          <div className="space-y-6 px-2 animate-in fade-in duration-500">
+          <div className="space-y-6 px-2 animate-in fade-in duration-500 pb-10">
             <div className="flex justify-between items-end">
               <div>
-                <h2 className="text-2xl font-black text-slate-800">Tareas del Hogar</h2>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Gestión de limpieza y mantenimiento</p>
+                <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">Tareas <CheckCircle2 className="text-indigo-600" /></h2>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Hogar y mantenimiento</p>
               </div>
               <button onClick={() => setShowAddTask(true)} className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg active:scale-95 transition-all">
                 <Plus size={20} />
               </button>
             </div>
-            <div className="space-y-3">
-              {data.tasks.length > 0 ? data.tasks.map(task => (
-                <div key={task.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-                    {CATEGORIES.find(cat => cat.id === task.category)?.icon || <LayoutGrid size={18} />}
+
+            {/* LAVADORA SECTION */}
+            <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden group">
+               <div className="absolute -right-6 -bottom-6 text-slate-50 group-hover:text-indigo-50 transition-colors">
+                  <Waves size={100} />
+               </div>
+               <div className="relative z-10 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                     <div className={`w-14 h-14 rounded-[1.5rem] flex items-center justify-center ${data.laundry.isActive ? 'bg-indigo-600 text-white animate-pulse' : 'bg-slate-50 text-slate-400'}`}>
+                        <Timer size={28} />
+                     </div>
+                     <div>
+                        <h3 className="font-black text-slate-800">Lavadora</h3>
+                        <p className="text-[10px] font-bold uppercase text-slate-400">
+                           {data.laundry.isActive ? `En curso • Quedan ${laundryTimeRemaining} min` : 'Sin actividad'}
+                        </p>
+                     </div>
                   </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-bold text-slate-800">{task.title}</p>
-                    <p className="text-[9px] font-black uppercase text-indigo-400">{task.frequency === 'periodic' ? `Cada ${task.intervalDays} días` : task.frequency}</p>
+                  {data.laundry.isActive ? (
+                    <button onClick={stopLaundry} className="px-5 py-2.5 bg-rose-50 text-rose-600 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95">Terminar</button>
+                  ) : (
+                    <button onClick={startLaundry} className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md active:scale-95">Poner</button>
+                  )}
+               </div>
+               {data.laundry.isActive && (
+                  <div className="mt-4 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                     <div 
+                        className="h-full bg-indigo-600 transition-all duration-1000" 
+                        style={{ width: `${Math.max(0, 100 - (laundryTimeRemaining / data.laundry.durationMinutes * 100))}%` }}
+                     />
                   </div>
-                  <button onClick={() => { setData(prev => ({...prev, tasks: prev.tasks.filter(t => t.id !== task.id)})); logActivity(`ha eliminado la tarea: ${task.title}`); }} className="p-2 text-rose-300">
-                    <Trash2 size={18} />
-                  </button>
+               )}
+            </div>
+
+            <div className="space-y-4">
+               <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest px-1">Lista de Pendientes</h3>
+              {data.tasks.length > 0 ? data.tasks.map(task => {
+                const category = CATEGORIES.find(c => c.id === task.category);
+                return (
+                  <div key={task.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4 group transition-all hover:shadow-md">
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${category?.color || 'bg-slate-100 text-slate-400'}`}>
+                      {category?.icon || <LayoutGrid size={18} />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-slate-800 truncate">{task.title}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                         <span className="text-[9px] font-black uppercase text-indigo-400/80">{task.frequency === 'periodic' ? `Cada ${task.intervalDays} días` : task.frequency}</span>
+                         <span className="w-1 h-1 rounded-full bg-slate-200"></span>
+                         <span className="text-[9px] font-bold text-slate-400 uppercase">{task.category}</span>
+                      </div>
+                    </div>
+                    <button onClick={() => { setData(prev => ({...prev, tasks: prev.tasks.filter(t => t.id !== task.id)})); logActivity(`ha eliminado la tarea: ${task.title}`); }} className="p-2 text-slate-200 hover:text-rose-500 transition-colors">
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                );
+              }) : (
+                <div className="py-20 text-center">
+                   <CheckCircle2 size={48} className="mx-auto mb-4 text-slate-100" />
+                   <p className="text-sm font-bold text-slate-300">¡Todo al día!</p>
                 </div>
-              )) : (
-                <div className="py-20 text-center text-slate-300">No hay tareas pendientes</div>
               )}
             </div>
           </div>
@@ -655,7 +733,7 @@ const App: React.FC = () => {
       {/* MODAL AÑADIR TAREA */}
       {showAddTask && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-end justify-center" onClick={() => setShowAddTask(false)}>
-          <div className="bg-white w-full max-w-md rounded-t-[3rem] p-8 pb-12 shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="bg-white w-full max-md rounded-t-[3rem] p-8 pb-12 shadow-2xl" onClick={e => e.stopPropagation()}>
              <div className="flex justify-between items-center mb-6">
                 <h3 className="text-xl font-black">Nueva Tarea</h3>
                 <button onClick={() => setShowAddTask(false)} className="p-2 bg-slate-100 rounded-full text-slate-400"><X size={20} /></button>
@@ -681,7 +759,7 @@ const App: React.FC = () => {
 
       {showEditPlanning && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-end justify-center" onClick={() => setShowEditPlanning(false)}>
-          <div className="bg-white w-full max-w-md rounded-t-[3rem] p-8 pb-12 shadow-2xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="bg-white w-full max-md rounded-t-[3rem] p-8 pb-12 shadow-2xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
              <div className="flex justify-between items-center mb-6">
                 <h3 className="text-xl font-black flex items-center gap-3">Planificar Semana <Edit2 className="text-indigo-600" /></h3>
                 <button onClick={() => setShowEditPlanning(false)} className="p-2 bg-slate-100 rounded-full text-slate-400"><X size={20} /></button>
@@ -714,10 +792,17 @@ const App: React.FC = () => {
 
       {showShiftCalendar && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={() => setShowShiftCalendar(false)}>
-          <div className="bg-white w-full max-sm rounded-[3rem] p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
+          {/* Fix typo max-sm to max-w-sm */}
+          <div className="bg-white w-full max-w-sm rounded-[3rem] p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-black text-slate-800 flex items-center gap-3"><Stethoscope className="text-orange-500" /> Guardias Carmen</h3>
-              <button onClick={() => setShowShiftCalendar(false)} className="p-2 bg-slate-100 rounded-full text-slate-400"><X size={20} /></button>
+              {/* Added month navigation to the shift calendar */}
+              <div className="flex items-center gap-2">
+                <button onClick={() => setCurrentCalendarMonth(prev => subMonths(prev, 1))} className="p-1 hover:bg-slate-100 rounded-lg text-slate-400"><ChevronLeft size={16} /></button>
+                <span className="text-[10px] font-black uppercase text-slate-500 min-w-[80px] text-center">{format(currentCalendarMonth, 'MMMM yyyy', { locale: es })}</span>
+                <button onClick={() => setCurrentCalendarMonth(prev => addMonths(prev, 1))} className="p-1 hover:bg-slate-100 rounded-lg text-slate-400"><ChevronRight size={16} /></button>
+                <button onClick={() => setShowShiftCalendar(false)} className="p-2 bg-slate-100 rounded-full text-slate-400 ml-2"><X size={20} /></button>
+              </div>
             </div>
             <div className="grid grid-cols-7 gap-1">
               {eachDayOfInterval({ start: startOfMonth(currentCalendarMonth), end: endOfMonth(currentCalendarMonth) }).map(day => {
