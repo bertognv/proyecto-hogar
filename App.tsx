@@ -149,6 +149,7 @@ const App: React.FC = () => {
   });
   
   const [showAddTask, setShowAddTask] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [showEditPlanning, setShowEditPlanning] = useState(false);
   const [showShiftCalendar, setShowShiftCalendar] = useState(false);
   const [currentCalendarMonth, setCurrentCalendarMonth] = useState(new Date());
@@ -177,7 +178,7 @@ const App: React.FC = () => {
     const start = parseISO(data.laundry.startTime);
     const elapsed = differenceInMinutes(new Date(), start);
     return Math.max(0, data.laundry.durationMinutes - elapsed);
-  }, [data.laundry]);
+  }, [data.laundry, today]); // Recalcular con hoy/ahora
 
   const filteredTasks = useMemo(() => {
     if (taskFilter === 'all') return data.tasks;
@@ -192,7 +193,7 @@ const App: React.FC = () => {
     const interval = setInterval(() => {
       setIsSyncing(true);
       setTimeout(() => setIsSyncing(false), 1200);
-    }, 15000);
+    }, 20000);
     return () => clearInterval(interval);
   }, []);
 
@@ -205,7 +206,7 @@ const App: React.FC = () => {
     };
     setData(prev => ({
       ...prev,
-      familyActivity: [newActivity, ...prev.familyActivity].slice(0, 40)
+      familyActivity: [newActivity, ...prev.familyActivity].slice(0, 50)
     }));
   };
 
@@ -238,20 +239,37 @@ const App: React.FC = () => {
     logActivity(`${isNowShift ? 'ha añadido' : 'ha quitado'} una guardia para el ${format(dateObj, 'd/MM')}`);
   };
 
-  const handleAddTask = () => {
+  const handleSaveTask = () => {
     if (!newTaskTitle.trim()) return;
-    const newTask: Task = {
-      id: Date.now().toString(),
-      title: newTaskTitle,
-      category: newTaskCategory,
-      frequency: newTaskFreq,
-      nextDueDate: calculateNextDueDate(newTaskFreq, undefined),
-      completedToday: false,
-      lastModifiedBy: data.userName
-    };
-    setData(prev => ({ ...prev, tasks: [newTask, ...prev.tasks] }));
-    logActivity(`ha creado la tarea: ${newTaskTitle}`);
+    
+    if (editingTask) {
+      setData(prev => ({
+        ...prev,
+        tasks: prev.tasks.map(t => t.id === editingTask.id ? {
+          ...t,
+          title: newTaskTitle,
+          category: newTaskCategory,
+          frequency: newTaskFreq,
+          lastModifiedBy: prev.userName
+        } : t)
+      }));
+      logActivity(`ha editado la tarea: ${newTaskTitle}`);
+    } else {
+      const newTask: Task = {
+        id: Date.now().toString(),
+        title: newTaskTitle,
+        category: newTaskCategory,
+        frequency: newTaskFreq,
+        nextDueDate: calculateNextDueDate(newTaskFreq, undefined),
+        completedToday: false,
+        lastModifiedBy: data.userName
+      };
+      setData(prev => ({ ...prev, tasks: [newTask, ...prev.tasks] }));
+      logActivity(`ha creado la tarea: ${newTaskTitle}`);
+    }
+    
     setNewTaskTitle('');
+    setEditingTask(null);
     setShowAddTask(false);
   };
 
@@ -296,11 +314,30 @@ const App: React.FC = () => {
     setShowAddInventory(false);
   };
 
+  const handleUpdateInventory = () => {
+    if (!selectedInventoryItem || !newInvName.trim()) return;
+    setData(prev => ({
+      ...prev,
+      inventoryItems: prev.inventoryItems.map(item => item.id === selectedInventoryItem.id ? {
+        ...item,
+        name: newInvName,
+        category: newInvCategory,
+        quantity: newInvQty,
+        unit: newInvUnit,
+        comments: newInvComment,
+        image: newInvImage || item.image,
+        lastUpdatedBy: prev.userName,
+        lastUpdatedAt: new Date().toISOString()
+      } : item)
+    }));
+    logActivity(`ha actualizado los detalles de ${newInvName}`);
+    setSelectedInventoryItem(null);
+  };
+
   const updateInvQty = (id: string, delta: number) => {
     setData(prev => {
       const itemToUpdate = prev.inventoryItems.find(i => i.id === id);
       if (!itemToUpdate) return prev;
-      
       const newQty = Math.max(0, itemToUpdate.quantity + delta);
       return {
         ...prev,
@@ -336,6 +373,25 @@ const App: React.FC = () => {
     setNewInvCategory('Cocina');
     setNewInvComment('');
     setNewInvImage(undefined);
+  };
+
+  const openEditTask = (task: Task) => {
+    setEditingTask(task);
+    setNewTaskTitle(task.title);
+    setNewTaskFreq(task.frequency);
+    setNewTaskCategory(task.category);
+    setShowAddTask(true);
+  };
+
+  const openEditInventory = (item: InventoryItem) => {
+    setSelectedInventoryItem(item);
+    setNewInvName(item.name);
+    setNewInvCategory(item.category);
+    setNewInvQty(item.quantity);
+    setNewInvUnit(item.unit);
+    setNewInvComment(item.comments || '');
+    setNewInvImage(item.image);
+    setShowAddInventory(true);
   };
 
   const toggleUser = () => {
@@ -420,6 +476,49 @@ const App: React.FC = () => {
                 </div>
               </div>
             </section>
+
+            {/* MÓDULO LAVADORA */}
+            <section className="bg-white rounded-[2.5rem] p-6 shadow-sm border border-slate-100 space-y-4">
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg font-black text-slate-800 flex items-center gap-2"><Waves size={20} className="text-blue-500" /> Lavadora</h2>
+                {data.laundry.isActive && <span className="text-[9px] font-black text-blue-500 animate-pulse uppercase">En proceso...</span>}
+              </div>
+              
+              {!data.laundry.isActive ? (
+                <button onClick={startLaundry} className="w-full flex items-center justify-between p-4 bg-blue-50 border border-blue-100 rounded-3xl active:scale-95 transition-all">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-500 rounded-2xl flex items-center justify-center text-white"><Clock size={18} /></div>
+                    <div className="text-left">
+                      <p className="text-sm font-black text-blue-800">Poner Lavadora</p>
+                      <p className="text-[10px] font-bold text-blue-400 uppercase">Duración aprox: 90 min</p>
+                    </div>
+                  </div>
+                  <Plus size={20} className="text-blue-600" />
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                     <div>
+                        <p className="text-xs font-black text-slate-800">Lavadora puesta por {data.laundry.startedBy}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">Quedan aprox. {laundryTimeRemaining} minutos</p>
+                     </div>
+                     <button onClick={stopLaundry} className="p-2 bg-rose-50 text-rose-500 rounded-xl"><Trash2 size={16} /></button>
+                  </div>
+                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-blue-500 transition-all duration-1000" 
+                      style={{ width: `${Math.max(5, 100 - (laundryTimeRemaining / 90 * 100))}%` }}
+                    ></div>
+                  </div>
+                  {laundryTimeRemaining === 0 && (
+                    <div className="bg-emerald-50 p-3 rounded-2xl flex items-center gap-3 text-emerald-600 border border-emerald-100 animate-bounce mt-2">
+                       <CheckCircle2 size={18} />
+                       <span className="text-[10px] font-black uppercase">¡Lavadora terminada! Hay que tender.</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
             
             <section className="bg-white rounded-[2.5rem] p-6 shadow-sm border border-slate-100 space-y-6">
               <div className="flex justify-between items-center">
@@ -451,7 +550,7 @@ const App: React.FC = () => {
                 <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">Tareas <CheckCircle2 className="text-indigo-600" /></h2>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Organización del Hogar</p>
               </div>
-              <button onClick={() => setShowAddTask(true)} className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg active:scale-95 transition-all">
+              <button onClick={() => { setEditingTask(null); resetInvForm(); setShowAddTask(true); }} className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg active:scale-95 transition-all">
                 <Plus size={20} />
               </button>
             </div>
@@ -481,9 +580,14 @@ const App: React.FC = () => {
                          <span className="text-[9px] font-bold text-slate-400 uppercase">{task.category}</span>
                       </div>
                     </div>
-                    <button onClick={() => { setData(prev => ({...prev, tasks: prev.tasks.filter(t => t.id !== task.id)})); logActivity(`ha eliminado: ${task.title}`); }} className="p-2 text-slate-200 hover:text-rose-500 transition-colors">
-                      <Trash2 size={18} />
-                    </button>
+                    <div className="flex gap-1">
+                        <button onClick={() => openEditTask(task)} className="p-2 text-slate-300 hover:text-indigo-500 transition-colors">
+                            <Edit2 size={16} />
+                        </button>
+                        <button onClick={() => { setData(prev => ({...prev, tasks: prev.tasks.filter(t => t.id !== task.id)})); logActivity(`ha eliminado: ${task.title}`); }} className="p-2 text-slate-200 hover:text-rose-500 transition-colors">
+                            <Trash2 size={18} />
+                        </button>
+                    </div>
                   </div>
                 );
               }) : (
@@ -500,7 +604,7 @@ const App: React.FC = () => {
                 <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">Almacén <Package className="text-amber-500" /></h2>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Control de recursos</p>
               </div>
-              <button onClick={() => setShowAddInventory(true)} className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg active:scale-95 transition-all">
+              <button onClick={() => { setSelectedInventoryItem(null); resetInvForm(); setShowAddInventory(true); }} className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg active:scale-95 transition-all">
                 <Plus size={20} />
               </button>
             </div>
@@ -508,7 +612,7 @@ const App: React.FC = () => {
             <div className="grid grid-cols-2 gap-4">
               {data.inventoryItems.length > 0 ? data.inventoryItems.map(item => (
                 <div key={item.id} className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden flex flex-col active:shadow-md transition-all">
-                   <div onClick={() => setSelectedInventoryItem(item)} className="aspect-square bg-slate-50 relative overflow-hidden group">
+                   <div onClick={() => openEditInventory(item)} className="aspect-square bg-slate-50 relative overflow-hidden group">
                       {item.image ? (
                         <img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                       ) : (
@@ -521,7 +625,7 @@ const App: React.FC = () => {
                       </div>
                    </div>
                    <div className="p-4 space-y-3">
-                      <div onClick={() => setSelectedInventoryItem(item)}>
+                      <div onClick={() => openEditInventory(item)}>
                         <h4 className="font-black text-slate-800 text-sm truncate">{item.name}</h4>
                         <p className="text-[10px] font-bold text-slate-400 uppercase">{item.quantity} {item.unit}</p>
                       </div>
@@ -552,7 +656,7 @@ const App: React.FC = () => {
                 />
             </div>
         )}
-        
+
         {activeTab === AppTab.WEEKLY && (
           <div className="space-y-6 px-2 animate-in fade-in duration-500">
             <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">Semana Completa <CalendarRange className="text-indigo-600" /></h2>
@@ -598,72 +702,46 @@ const App: React.FC = () => {
         )}
 
         {activeTab === AppTab.ACTIVITY && (
-            <div className="space-y-6 animate-in fade-in duration-500">
+            <div className="space-y-6 animate-in fade-in duration-500 pb-10">
                 <div className="px-2">
-                    <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">Actividad <History className="text-indigo-600" /></h2>
+                    <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">Cambios Recientes <History className="text-indigo-600" /></h2>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Registro de actividad familiar</p>
                 </div>
-                <div className="space-y-3">
-                    {data.familyActivity.map(item => (
+                <div className="space-y-3 px-2">
+                    {data.familyActivity.length > 0 ? data.familyActivity.map(item => (
                         <div key={item.id} className="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-100 flex gap-4 items-start">
-                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${item.user === 'Carmen' ? 'bg-rose-50 text-rose-500' : 'bg-indigo-50 text-indigo-500'}`}>
-                                <User size={20} />
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${item.user === 'Carmen' ? 'bg-rose-50 text-rose-500' : 'bg-indigo-50 text-indigo-500'}`}>
+                                <User size={18} />
                             </div>
                             <div className="flex-1 min-w-0">
                                 <p className="text-xs text-slate-700 leading-relaxed"><span className="font-black text-slate-900">{item.user}</span> {item.action}</p>
                                 <p className="text-[9px] font-bold text-slate-400 uppercase mt-2">{formatDistanceToNow(parseISO(item.timestamp), { addSuffix: true, locale: es })}</p>
                             </div>
                         </div>
-                    ))}
+                    )) : (
+                        <div className="py-20 text-center text-slate-300">No hay cambios registrados todavía</div>
+                    )}
                 </div>
             </div>
         )}
       </main>
 
-      <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/90 backdrop-blur-xl border-t border-slate-100 flex justify-around items-center py-5 px-4 safe-bottom shadow-lg z-50">
-        <NavButton active={activeTab === AppTab.DASHBOARD} onClick={() => setActiveTab(AppTab.DASHBOARD)} icon={<Home size={22} />} label="Inicio" />
-        <NavButton active={activeTab === AppTab.WEEKLY} onClick={() => setActiveTab(AppTab.WEEKLY)} icon={<CalendarRange size={22} />} label="Semana" />
-        <NavButton active={activeTab === AppTab.TASKS} onClick={() => setActiveTab(AppTab.TASKS)} icon={<CheckCircle2 size={22} />} label="Tareas" />
-        <NavButton active={activeTab === AppTab.INVENTORY} onClick={() => setActiveTab(AppTab.INVENTORY)} icon={<Package size={22} />} label="Almacén" />
-        <NavButton active={activeTab === AppTab.SHOPPING} onClick={() => setActiveTab(AppTab.SHOPPING)} icon={<ShoppingCart size={22} />} label="Compra" />
+      <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/95 backdrop-blur-xl border-t border-slate-100 flex justify-around items-center py-4 px-2 safe-bottom shadow-2xl z-50">
+        <NavButton active={activeTab === AppTab.DASHBOARD} onClick={() => setActiveTab(AppTab.DASHBOARD)} icon={<Home size={20} />} label="Inicio" />
+        <NavButton active={activeTab === AppTab.WEEKLY} onClick={() => setActiveTab(AppTab.WEEKLY)} icon={<CalendarRange size={20} />} label="Semana" />
+        <NavButton active={activeTab === AppTab.TASKS} onClick={() => setActiveTab(AppTab.TASKS)} icon={<CheckCircle2 size={20} />} label="Tareas" />
+        <NavButton active={activeTab === AppTab.INVENTORY} onClick={() => setActiveTab(AppTab.INVENTORY)} icon={<Package size={20} />} label="Stock" />
+        <NavButton active={activeTab === AppTab.SHOPPING} onClick={() => setActiveTab(AppTab.SHOPPING)} icon={<ShoppingCart size={20} />} label="Compra" />
+        <NavButton active={activeTab === AppTab.ACTIVITY} onClick={() => setActiveTab(AppTab.ACTIVITY)} icon={<History size={20} />} label="Cambios" />
       </nav>
 
-      {/* MODALES ALMACÉN */}
-      {selectedInventoryItem && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-6" onClick={() => setSelectedInventoryItem(null)}>
-          <div className="bg-white w-full max-w-sm rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-            <div className="aspect-video w-full bg-slate-100 relative">
-              {selectedInventoryItem.image ? (
-                <img src={selectedInventoryItem.image} alt={selectedInventoryItem.name} className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-slate-300">
-                  <Package size={64} />
-                </div>
-              )}
-              <button onClick={() => setSelectedInventoryItem(null)} className="absolute top-4 right-4 p-2 bg-white/90 backdrop-blur rounded-full text-slate-800 shadow-sm"><X size={20} /></button>
-            </div>
-            <div className="p-8 space-y-6">
-              <div>
-                <span className="text-[10px] font-black uppercase text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md">{selectedInventoryItem.category}</span>
-                <h3 className="text-2xl font-black text-slate-800 mt-2">{selectedInventoryItem.name}</h3>
-                <p className="text-sm font-bold text-slate-400 mt-1">{selectedInventoryItem.quantity} {selectedInventoryItem.unit} en stock</p>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button onClick={() => deleteInventoryItem(selectedInventoryItem.id)} className="flex-1 p-4 bg-rose-50 text-rose-500 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2">
-                  <Trash2 size={16} /> Eliminar
-                </button>
-                <button onClick={() => setSelectedInventoryItem(null)} className="flex-1 p-4 bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest">Cerrar</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
+      {/* MODAL EDITAR/AÑADIR ALMACÉN */}
       {showAddInventory && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-end justify-center" onClick={() => { setShowAddInventory(false); resetInvForm(); }}>
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-end justify-center" onClick={() => { setShowAddInventory(false); resetInvForm(); setSelectedInventoryItem(null); }}>
           <div className="bg-white w-full max-w-md rounded-t-[3rem] p-8 pb-12 shadow-2xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-black flex items-center gap-3">Añadir al Almacén</h3>
-                <button onClick={() => { setShowAddInventory(false); resetInvForm(); }} className="p-2 bg-slate-100 rounded-full text-slate-400"><X size={20} /></button>
+                <h3 className="text-xl font-black flex items-center gap-3">{selectedInventoryItem ? 'Editar Producto' : 'Añadir al Almacén'}</h3>
+                <button onClick={() => { setShowAddInventory(false); resetInvForm(); setSelectedInventoryItem(null); }} className="p-2 bg-slate-100 rounded-full text-slate-400"><X size={20} /></button>
              </div>
              <div className="space-y-6">
                 <div className="flex gap-4">
@@ -672,7 +750,7 @@ const App: React.FC = () => {
                     <input type="file" ref={fileInputRef} onChange={handleImageChange} accept="image/*" className="hidden" />
                   </div>
                   <div className="flex-1 space-y-4">
-                    <input type="text" placeholder="Producto" value={newInvName} onChange={e => setNewInvName(e.target.value)} className="w-full p-3 bg-slate-50 rounded-xl font-bold border-none outline-none" />
+                    <input type="text" placeholder="Producto" value={newInvName} onChange={e => setNewInvName(e.target.value)} className="w-full p-4 bg-slate-50 rounded-xl font-bold border-none outline-none text-sm" />
                     <select value={newInvCategory} onChange={e => setNewInvCategory(e.target.value)} className="w-full p-3 bg-slate-50 rounded-xl font-bold border-none text-xs">
                        <option value="Cocina">Cocina / Alimentación</option>
                        <option value="Limpieza">Limpieza</option>
@@ -683,58 +761,92 @@ const App: React.FC = () => {
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                   <input type="number" placeholder="Cant." value={newInvQty} onChange={e => setNewInvQty(parseInt(e.target.value) || 0)} className="w-full p-3 bg-slate-50 rounded-xl font-bold border-none" />
-                   <input type="text" placeholder="Ud. (kg, ud, l...)" value={newInvUnit} onChange={e => setNewInvUnit(e.target.value)} className="w-full p-3 bg-slate-50 rounded-xl font-bold border-none text-xs" />
+                   <div className="space-y-2">
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">Cantidad</label>
+                      <input type="number" placeholder="Cant." value={newInvQty} onChange={e => setNewInvQty(parseInt(e.target.value) || 0)} className="w-full p-3 bg-slate-50 rounded-xl font-bold border-none" />
+                   </div>
+                   <div className="space-y-2">
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">Unidad</label>
+                      <input type="text" placeholder="Ud. (kg, ud, l...)" value={newInvUnit} onChange={e => setNewInvUnit(e.target.value)} className="w-full p-3 bg-slate-50 rounded-xl font-bold border-none text-xs" />
+                   </div>
                 </div>
-                <button onClick={handleAddInventory} className="w-full p-5 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-all uppercase tracking-widest text-xs">Guardar en Almacén</button>
+                <div className="flex gap-2">
+                   {selectedInventoryItem && (
+                     <button onClick={() => deleteInventoryItem(selectedInventoryItem.id)} className="p-5 bg-rose-50 text-rose-500 rounded-2xl active:scale-95 transition-all"><Trash2 size={20} /></button>
+                   )}
+                   <button onClick={selectedInventoryItem ? handleUpdateInventory : handleAddInventory} className="flex-1 p-5 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-all uppercase tracking-widest text-xs">
+                      {selectedInventoryItem ? 'Actualizar Producto' : 'Guardar en Almacén'}
+                   </button>
+                </div>
              </div>
           </div>
         </div>
       )}
 
-      {/* RESTO DE MODALES */}
+      {/* MODAL EDITAR/AÑADIR TAREA */}
       {showAddTask && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-end justify-center" onClick={() => setShowAddTask(false)}>
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-end justify-center" onClick={() => { setShowAddTask(false); setEditingTask(null); }}>
           <div className="bg-white w-full max-md rounded-t-[3rem] p-8 pb-12 shadow-2xl" onClick={e => e.stopPropagation()}>
              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-black">Nueva Tarea</h3>
-                <button onClick={() => setShowAddTask(false)} className="p-2 bg-slate-100 rounded-full text-slate-400"><X size={20} /></button>
+                <h3 className="text-xl font-black">{editingTask ? 'Editar Tarea' : 'Nueva Tarea'}</h3>
+                <button onClick={() => { setShowAddTask(false); setEditingTask(null); }} className="p-2 bg-slate-100 rounded-full text-slate-400"><X size={20} /></button>
              </div>
              <div className="space-y-4">
-                <input type="text" placeholder="¿Qué hay que hacer?" value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" />
+                <input type="text" placeholder="¿Qué hay que hacer?" value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none text-sm" />
                 <div className="grid grid-cols-2 gap-3">
-                  <select value={newTaskCategory} onChange={e => setNewTaskCategory(e.target.value)} className="p-3 bg-slate-50 rounded-xl font-bold text-xs">
-                    {CATEGORIES.map(cat => <option key={cat.id} value={cat.id}>{cat.label}</option>)}
-                  </select>
-                  <select value={newTaskFreq} onChange={e => setNewTaskFreq(e.target.value as Frequency)} className="p-3 bg-slate-50 rounded-xl font-bold text-xs">
-                    <option value="daily">Diaria</option>
-                    <option value="weekly">Semanal</option>
-                    <option value="periodic">Periódica</option>
-                  </select>
+                  <div className="space-y-2">
+                    <label className="text-[8px] font-black uppercase text-slate-400 ml-1">Categoría</label>
+                    <select value={newTaskCategory} onChange={e => setNewTaskCategory(e.target.value)} className="w-full p-4 bg-slate-50 rounded-xl font-bold text-xs border-none outline-none">
+                      {CATEGORIES.map(cat => <option key={cat.id} value={cat.id}>{cat.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[8px] font-black uppercase text-slate-400 ml-1">Frecuencia</label>
+                    <select value={newTaskFreq} onChange={e => setNewTaskFreq(e.target.value as Frequency)} className="w-full p-4 bg-slate-50 rounded-xl font-bold text-xs border-none outline-none">
+                      <option value="daily">Diaria</option>
+                      <option value="weekly">Semanal</option>
+                      <option value="periodic">Periódica</option>
+                    </select>
+                  </div>
                 </div>
-                <button onClick={handleAddTask} className="w-full p-4 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-all">Crear Tarea</button>
+                <button onClick={handleSaveTask} className="w-full p-5 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-all uppercase tracking-widest text-xs">
+                   {editingTask ? 'Guardar Cambios' : 'Crear Tarea'}
+                </button>
              </div>
           </div>
         </div>
       )}
 
+      {/* MODAL PLANIFICACIÓN SEMANAL */}
       {showEditPlanning && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-end justify-center" onClick={() => setShowEditPlanning(false)}>
           <div className="bg-white w-full max-md rounded-t-[3rem] p-8 pb-12 shadow-2xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-black flex items-center gap-3">Planificar Semana <Edit2 className="text-indigo-600" /></h3>
+                <h3 className="text-xl font-black flex items-center gap-3">Planificar {fullWeekDays[selectedDayIndex]} <Edit2 className="text-indigo-600" /></h3>
                 <button onClick={() => setShowEditPlanning(false)} className="p-2 bg-slate-100 rounded-full text-slate-400"><X size={20} /></button>
              </div>
              <div className="space-y-6">
                 <div className="p-5 bg-indigo-50/50 rounded-[2rem] border border-indigo-100 space-y-4">
-                  <input type="text" value={currentSelectedPlanning.meals?.lunch || ''} onChange={(e) => updatePlanning(selectedDayIndex, { meals: { lunch: e.target.value } })} placeholder="Comida" className="w-full p-3 bg-white rounded-xl border-none font-bold text-sm shadow-sm" />
-                  <input type="text" value={currentSelectedPlanning.meals?.dinner || ''} onChange={(e) => updatePlanning(selectedDayIndex, { meals: { dinner: e.target.value } })} placeholder="Cena" className="w-full p-3 bg-white rounded-xl border-none font-bold text-sm shadow-sm" />
+                  <div className="space-y-2">
+                    <label className="text-[8px] font-black uppercase text-slate-400 ml-1">Comida</label>
+                    <input type="text" value={currentSelectedPlanning.meals?.lunch || ''} onChange={(e) => updatePlanning(selectedDayIndex, { meals: { lunch: e.target.value } })} placeholder="¿Qué comemos?" className="w-full p-4 bg-white rounded-xl border-none font-bold text-sm shadow-sm outline-none" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[8px] font-black uppercase text-slate-400 ml-1">Cena</label>
+                    <input type="text" value={currentSelectedPlanning.meals?.dinner || ''} onChange={(e) => updatePlanning(selectedDayIndex, { meals: { dinner: e.target.value } })} placeholder="¿Qué cenamos?" className="w-full p-4 bg-white rounded-xl border-none font-bold text-sm shadow-sm outline-none" />
+                  </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <input type="text" value={currentSelectedPlanning.sport?.carmen || ''} onChange={(e) => updatePlanning(selectedDayIndex, { sport: { carmen: e.target.value } })} placeholder="Dep. Carmen" className="w-full p-3 bg-white rounded-xl border-none font-bold text-xs shadow-sm" />
-                    <input type="text" value={currentSelectedPlanning.sport?.alberto || ''} onChange={(e) => updatePlanning(selectedDayIndex, { sport: { alberto: e.target.value } })} placeholder="Dep. Alberto" className="w-full p-3 bg-white rounded-xl border-none font-bold text-xs shadow-sm" />
+                    <div className="space-y-2">
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">Dep. Carmen</label>
+                      <input type="text" value={currentSelectedPlanning.sport?.carmen || ''} onChange={(e) => updatePlanning(selectedDayIndex, { sport: { carmen: e.target.value } })} placeholder="Deporte C" className="w-full p-3 bg-white rounded-xl border-none font-bold text-xs shadow-sm outline-none" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">Dep. Alberto</label>
+                      <input type="text" value={currentSelectedPlanning.sport?.alberto || ''} onChange={(e) => updatePlanning(selectedDayIndex, { sport: { alberto: e.target.value } })} placeholder="Deporte A" className="w-full p-3 bg-white rounded-xl border-none font-bold text-xs shadow-sm outline-none" />
+                    </div>
                   </div>
                 </div>
-                <button onClick={() => setShowEditPlanning(false)} className="w-full p-5 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-all">Guardar Planning</button>
+                <button onClick={() => { setShowEditPlanning(false); logActivity(`ha actualizado el planning del ${fullWeekDays[selectedDayIndex]}`); }} className="w-full p-5 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-all uppercase tracking-widest text-xs">Guardar Planning</button>
              </div>
           </div>
         </div>
@@ -744,7 +856,7 @@ const App: React.FC = () => {
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={() => setShowShiftCalendar(false)}>
           <div className="bg-white w-full max-w-sm rounded-[3rem] p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-black text-slate-800 flex items-center gap-3"><Stethoscope className="text-orange-500" /> Guardias Carmen</h3>
+              <h3 className="text-lg font-black text-slate-800 flex items-center gap-3"><Stethoscope className="text-orange-500" /> Guardias Carmen</h3>
               <div className="flex items-center gap-2">
                 <button onClick={() => setCurrentCalendarMonth(prev => subMonths(prev, 1))} className="p-1 hover:bg-slate-100 rounded-lg text-slate-400"><ChevronLeft size={16} /></button>
                 <span className="text-[10px] font-black uppercase text-slate-500 min-w-[80px] text-center">{format(currentCalendarMonth, 'MMMM yyyy', { locale: es })}</span>
@@ -776,7 +888,6 @@ const ShoppingList: React.FC<{ items: ShoppingItem[]; onToggle: (id: string) => 
   
   const handleAdd = async () => {
     if (!n.trim()) return;
-    
     let finalPrice = parseFloat(p);
     
     if (isNaN(finalPrice) || finalPrice <= 0) {
@@ -800,7 +911,6 @@ const ShoppingList: React.FC<{ items: ShoppingItem[]; onToggle: (id: string) => 
             }
           }
         });
-        
         const result = JSON.parse(response.text.trim());
         finalPrice = result.estimatedPrice || 0;
       } catch (e) {
@@ -817,23 +927,23 @@ const ShoppingList: React.FC<{ items: ShoppingItem[]; onToggle: (id: string) => 
   };
 
   return (
-    <div className="space-y-4">
-      <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm space-y-3">
+    <div className="space-y-4 pb-12">
+      <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
         <div className="flex gap-2">
           <input 
             type="text" 
             placeholder="Producto..." 
             value={n} 
             onChange={(e) => setN(e.target.value)} 
-            className="flex-1 bg-slate-50 p-3 rounded-xl font-bold outline-none border-none text-sm" 
+            className="flex-1 bg-slate-50 p-4 rounded-xl font-bold outline-none border-none text-sm" 
           />
-          <div className="relative w-24">
+          <div className="relative w-28">
             <input 
               type="number" 
               placeholder="Precio" 
               value={p} 
               onChange={(e) => setP(e.target.value)} 
-              className="w-full bg-slate-50 p-3 rounded-xl font-bold outline-none border-none text-sm pr-6" 
+              className="w-full bg-slate-50 p-4 rounded-xl font-bold outline-none border-none text-sm pr-6" 
             />
             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-300">€</span>
           </div>
@@ -848,7 +958,7 @@ const ShoppingList: React.FC<{ items: ShoppingItem[]; onToggle: (id: string) => 
         </button>
       </div>
 
-      <div className="space-y-2 pb-10">
+      <div className="space-y-2">
         {items.map(item => (
           <div key={item.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4 animate-in slide-in-from-bottom-2 duration-300">
             <button onClick={() => onToggle(item.id)} className={item.completed ? 'text-emerald-500' : 'text-slate-200'}>
@@ -865,7 +975,7 @@ const ShoppingList: React.FC<{ items: ShoppingItem[]; onToggle: (id: string) => 
         {items.length === 0 && (
           <div className="py-20 text-center text-slate-300 opacity-50">
             <ShoppingBasket size={48} className="mx-auto mb-4" />
-            <p className="text-sm font-bold uppercase tracking-widest">Nada que comprar por ahora</p>
+            <p className="text-sm font-bold uppercase tracking-widest">Lista vacía</p>
           </div>
         )}
       </div>
@@ -874,11 +984,11 @@ const ShoppingList: React.FC<{ items: ShoppingItem[]; onToggle: (id: string) => 
 };
 
 const NavButton: React.FC<{ active: boolean; onClick: () => void; icon: React.ReactNode; label: string }> = ({ active, onClick, icon, label }) => (
-  <button onClick={onClick} className={`flex flex-col items-center gap-1 transition-all duration-300 ${active ? 'text-indigo-600 scale-110' : 'text-slate-300'}`}>
-    <div className={`p-2 rounded-2xl transition-all ${active ? 'bg-indigo-50 shadow-sm' : ''}`}>
+  <button onClick={onClick} className={`flex flex-col items-center gap-1 transition-all duration-300 flex-1 ${active ? 'text-indigo-600 scale-105' : 'text-slate-300'}`}>
+    <div className={`p-1.5 rounded-xl transition-all ${active ? 'bg-indigo-50 shadow-sm' : ''}`}>
       {icon}
     </div>
-    <span className="text-[8px] font-black uppercase tracking-widest">{label}</span>
+    <span className="text-[7px] font-black uppercase tracking-tight">{label}</span>
   </button>
 );
 
