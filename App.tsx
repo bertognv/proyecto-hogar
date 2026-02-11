@@ -99,6 +99,14 @@ const INITIAL_PLANNING: Record<number, DayPlanning> = {
   6: { sport: { carmen: '', alberto: '' }, meals: { lunch: '', dinner: '' } },
 };
 
+const DEFAULT_TASKS: Task[] = [
+  { id: 't-1', title: 'Cambiar sábanas', category: 'Limpieza', frequency: 'weekly', nextDueDate: calculateNextDueDate('weekly', undefined), completedToday: false, lastModifiedBy: 'Sistema' },
+  { id: 't-2', title: 'Limpiar arenero gatas', category: 'Mascotas', frequency: 'daily', nextDueDate: calculateNextDueDate('daily', undefined), completedToday: false, lastModifiedBy: 'Sistema' },
+  { id: 't-3', title: 'Cambiar albornoces', category: 'Limpieza', frequency: 'weekly', nextDueDate: calculateNextDueDate('weekly', undefined), completedToday: false, lastModifiedBy: 'Sistema' },
+  { id: 't-4', title: 'Repasar baños', category: 'Limpieza', frequency: 'weekly', nextDueDate: calculateNextDueDate('weekly', undefined), completedToday: false, lastModifiedBy: 'Sistema' },
+  { id: 't-5', title: 'Mantenimiento plantas', category: 'Mantenimiento', frequency: 'weekly', nextDueDate: calculateNextDueDate('weekly', undefined), completedToday: false, lastModifiedBy: 'Sistema' },
+];
+
 const INITIAL_DATA: AppData = {
   userName: "Alberto",
   familyCode: "GNM-PRO",
@@ -108,7 +116,7 @@ const INITIAL_DATA: AppData = {
   weeklyPlanning: INITIAL_PLANNING,
   urgentNotes: [],
   shifts: [],
-  tasks: [],
+  tasks: DEFAULT_TASKS,
   shoppingItems: [],
   inventoryItems: [
     { id: 'inv-1', name: 'Huevos', quantity: 12, unit: 'unidades', category: 'Cocina', lastUpdatedBy: 'Sistema', lastUpdatedAt: new Date().toISOString() },
@@ -123,7 +131,7 @@ const App: React.FC = () => {
       try {
         const parsed = JSON.parse(saved);
         if (!parsed.inventoryItems) parsed.inventoryItems = INITIAL_DATA.inventoryItems;
-        if (!parsed.tasks) parsed.tasks = [];
+        if (!parsed.tasks || parsed.tasks.length === 0) parsed.tasks = DEFAULT_TASKS;
         if (!parsed.weeklyPlanning) parsed.weeklyPlanning = INITIAL_PLANNING;
         if (!parsed.laundry) parsed.laundry = INITIAL_DATA.laundry;
         return { ...INITIAL_DATA, ...parsed };
@@ -143,7 +151,6 @@ const App: React.FC = () => {
   const [showAddTask, setShowAddTask] = useState(false);
   const [showEditPlanning, setShowEditPlanning] = useState(false);
   const [showShiftCalendar, setShowShiftCalendar] = useState(false);
-  // Fix: add missing currentCalendarMonth state for the calendar modal
   const [currentCalendarMonth, setCurrentCalendarMonth] = useState(new Date());
   const [isSyncing, setIsSyncing] = useState(false);
   
@@ -157,15 +164,16 @@ const App: React.FC = () => {
   const [newInvImage, setNewInvImage] = useState<string | undefined>(undefined);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Task creation states
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskFreq, setNewTaskFreq] = useState<Frequency>('daily');
   const [newTaskCategory, setNewTaskCategory] = useState('General');
 
+  // Filtro de tareas
+  const [taskFilter, setTaskFilter] = useState<string>('all');
+
   const today = new Date();
   const startOfThisWeek = startOfWeek(today, { weekStartsOn: 1 });
 
-  // Laundry helper
   const laundryTimeRemaining = useMemo(() => {
     if (!data.laundry.isActive || !data.laundry.startTime) return 0;
     const start = parseISO(data.laundry.startTime);
@@ -334,6 +342,11 @@ const App: React.FC = () => {
     setData(prev => ({ ...prev, userName: newUser }));
   };
 
+  const filteredTasks = useMemo(() => {
+    if (taskFilter === 'all') return data.tasks;
+    return data.tasks.filter(t => t.category === taskFilter);
+  }, [data.tasks, taskFilter]);
+
   const weekDaysShort = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
   const fullWeekDays = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
@@ -444,8 +457,8 @@ const App: React.FC = () => {
                 const isShift = data.shifts.includes(dayISO);
                 const plan = data.weeklyPlanning[idx] || { sport: { carmen: '', alberto: '' }, meals: { lunch: '', dinner: '' } };
                 return (
-                  <div key={idx} className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm flex items-start gap-4">
-                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 font-black text-xs ${isShift ? 'bg-orange-500 text-white' : 'bg-slate-50 text-slate-400'}`}>
+                  <div key={idx} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm flex items-start gap-4">
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 font-black text-sm ${isShift ? 'bg-orange-500 text-white' : 'bg-slate-50 text-slate-400'}`}>
                       {weekDaysShort[idx]}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -453,9 +466,23 @@ const App: React.FC = () => {
                         <span className="text-[10px] font-black uppercase text-slate-400">{day}</span>
                         {isShift && <span className="text-[8px] font-black uppercase text-orange-500 flex items-center gap-1"><Stethoscope size={8} /> Guardia</span>}
                       </div>
-                      <div className="flex gap-4">
-                         <p className="text-[11px] text-slate-600 truncate"><Sun size={10} className="inline mr-1 text-emerald-500" /> {plan.meals?.lunch || '-'}</p>
-                         <p className="text-[11px] text-slate-600 truncate"><Moon size={10} className="inline mr-1 text-indigo-500" /> {plan.meals?.dinner || '-'}</p>
+                      <div className="flex flex-col gap-2">
+                        <div className="flex gap-4">
+                           <p className="text-[11px] font-bold text-slate-600 truncate"><Sun size={10} className="inline mr-1 text-emerald-500" /> {plan.meals?.lunch || '-'}</p>
+                           <p className="text-[11px] font-bold text-slate-600 truncate"><Moon size={10} className="inline mr-1 text-indigo-500" /> {plan.meals?.dinner || '-'}</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                           { (plan.sport?.carmen || isShift) && (
+                             <span className="text-[9px] font-black text-orange-600 bg-orange-50 px-2 py-0.5 rounded-lg flex items-center gap-1">
+                               <Dumbbell size={9} /> C: {isShift ? 'Guardia' : plan.sport?.carmen}
+                             </span>
+                           )}
+                           { plan.sport?.alberto && (
+                             <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg flex items-center gap-1">
+                               <Dumbbell size={9} /> A: {plan.sport?.alberto}
+                             </span>
+                           )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -467,7 +494,7 @@ const App: React.FC = () => {
 
         {activeTab === AppTab.TASKS && (
           <div className="space-y-6 px-2 animate-in fade-in duration-500 pb-10">
-            <div className="flex justify-between items-end">
+            <div className="flex justify-between items-end mb-2">
               <div>
                 <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">Tareas <CheckCircle2 className="text-indigo-600" /></h2>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Hogar y mantenimiento</p>
@@ -477,42 +504,58 @@ const App: React.FC = () => {
               </button>
             </div>
 
-            {/* LAVADORA SECTION */}
-            <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden group">
-               <div className="absolute -right-6 -bottom-6 text-slate-50 group-hover:text-indigo-50 transition-colors">
-                  <Waves size={100} />
-               </div>
-               <div className="relative z-10 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                     <div className={`w-14 h-14 rounded-[1.5rem] flex items-center justify-center ${data.laundry.isActive ? 'bg-indigo-600 text-white animate-pulse' : 'bg-slate-50 text-slate-400'}`}>
-                        <Timer size={28} />
-                     </div>
-                     <div>
-                        <h3 className="font-black text-slate-800">Lavadora</h3>
-                        <p className="text-[10px] font-bold uppercase text-slate-400">
-                           {data.laundry.isActive ? `En curso • Quedan ${laundryTimeRemaining} min` : 'Sin actividad'}
-                        </p>
-                     </div>
-                  </div>
-                  {data.laundry.isActive ? (
-                    <button onClick={stopLaundry} className="px-5 py-2.5 bg-rose-50 text-rose-600 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95">Terminar</button>
-                  ) : (
-                    <button onClick={startLaundry} className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md active:scale-95">Poner</button>
-                  )}
-               </div>
-               {data.laundry.isActive && (
-                  <div className="mt-4 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                     <div 
-                        className="h-full bg-indigo-600 transition-all duration-1000" 
-                        style={{ width: `${Math.max(0, 100 - (laundryTimeRemaining / data.laundry.durationMinutes * 100))}%` }}
-                     />
-                  </div>
-               )}
+            {/* FILTRO DE CATEGORÍAS */}
+            <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
+               <button 
+                  onClick={() => setTaskFilter('all')} 
+                  className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all border ${taskFilter === 'all' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-white text-slate-400 border-slate-100'}`}
+               >
+                  Todas
+               </button>
+               {CATEGORIES.map(cat => (
+                  <button 
+                    key={cat.id} 
+                    onClick={() => setTaskFilter(cat.id)} 
+                    className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all border ${taskFilter === cat.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-white text-slate-400 border-slate-100'}`}
+                  >
+                    {cat.icon}
+                    {cat.label}
+                  </button>
+               ))}
             </div>
 
+            {/* LAVADORA SECTION (Solo se muestra en 'all' o en categorías lógicas como Limpieza) */}
+            {(taskFilter === 'all' || taskFilter === 'Limpieza') && (
+              <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden group">
+                <div className="absolute -right-6 -bottom-6 text-slate-50 group-hover:text-indigo-50 transition-colors">
+                    <Waves size={100} />
+                </div>
+                <div className="relative z-10 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className={`w-14 h-14 rounded-[1.5rem] flex items-center justify-center ${data.laundry.isActive ? 'bg-indigo-600 text-white animate-pulse' : 'bg-slate-50 text-slate-400'}`}>
+                          <Timer size={28} />
+                      </div>
+                      <div>
+                          <h3 className="font-black text-slate-800">Lavadora</h3>
+                          <p className="text-[10px] font-bold uppercase text-slate-400">
+                            {data.laundry.isActive ? `En curso • Quedan ${laundryTimeRemaining} min` : 'Sin actividad'}
+                          </p>
+                      </div>
+                    </div>
+                    {data.laundry.isActive ? (
+                      <button onClick={stopLaundry} className="px-5 py-2.5 bg-rose-50 text-rose-600 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95">Terminar</button>
+                    ) : (
+                      <button onClick={startLaundry} className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md active:scale-95">Poner</button>
+                    )}
+                </div>
+              </div>
+            )}
+
             <div className="space-y-4">
-               <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest px-1">Lista de Pendientes</h3>
-              {data.tasks.length > 0 ? data.tasks.map(task => {
+               <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest px-1">
+                  {taskFilter === 'all' ? 'Lista de Pendientes' : `Tareas de ${taskFilter}`}
+               </h3>
+              {filteredTasks.length > 0 ? filteredTasks.map(task => {
                 const category = CATEGORIES.find(c => c.id === task.category);
                 return (
                   <div key={task.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4 group transition-all hover:shadow-md">
@@ -522,7 +565,7 @@ const App: React.FC = () => {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-slate-800 truncate">{task.title}</p>
                       <div className="flex items-center gap-2 mt-1">
-                         <span className="text-[9px] font-black uppercase text-indigo-400/80">{task.frequency === 'periodic' ? `Cada ${task.intervalDays} días` : task.frequency}</span>
+                         <span className="text-[9px] font-black uppercase text-indigo-400/80">{task.frequency === 'periodic' ? `Cada ${task.intervalDays} días` : (task.frequency === 'daily' ? 'Diario' : 'Semanal')}</span>
                          <span className="w-1 h-1 rounded-full bg-slate-200"></span>
                          <span className="text-[9px] font-bold text-slate-400 uppercase">{task.category}</span>
                       </div>
@@ -535,7 +578,7 @@ const App: React.FC = () => {
               }) : (
                 <div className="py-20 text-center">
                    <CheckCircle2 size={48} className="mx-auto mb-4 text-slate-100" />
-                   <p className="text-sm font-bold text-slate-300">¡Todo al día!</p>
+                   <p className="text-sm font-bold text-slate-300">No hay tareas en esta categoría</p>
                 </div>
               )}
             </div>
@@ -651,18 +694,6 @@ const App: React.FC = () => {
                 <h3 className="text-2xl font-black text-slate-800 mt-2">{selectedInventoryItem.name}</h3>
                 <p className="text-sm font-bold text-slate-400 mt-1">{selectedInventoryItem.quantity} {selectedInventoryItem.unit} disponibles</p>
               </div>
-
-              {selectedInventoryItem.comments && (
-                <div className="p-4 bg-slate-50 rounded-2xl flex gap-3 items-start">
-                   <MessageSquare size={18} className="text-slate-400 mt-1 shrink-0" />
-                   <p className="text-xs font-bold text-slate-600 italic leading-relaxed">"{selectedInventoryItem.comments}"</p>
-                </div>
-              )}
-
-              <div className="flex items-center gap-3 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                 <User size={12} /> Actualizado por {selectedInventoryItem.lastUpdatedBy}
-              </div>
-
               <div className="flex gap-3 pt-2">
                 <button onClick={() => deleteInventoryItem(selectedInventoryItem.id)} className="flex-1 p-4 bg-rose-50 text-rose-500 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:bg-rose-100">
                   <Trash2 size={16} /> Eliminar
@@ -682,18 +713,10 @@ const App: React.FC = () => {
                 <h3 className="text-xl font-black flex items-center gap-3">Nuevo en Almacén <Package className="text-amber-500" /></h3>
                 <button onClick={() => { setShowAddInventory(false); resetInvForm(); }} className="p-2 bg-slate-100 rounded-full text-slate-400"><X size={20} /></button>
              </div>
-             
              <div className="space-y-6">
                 <div className="flex gap-4">
                   <div onClick={() => fileInputRef.current?.click()} className="w-24 h-24 rounded-3xl bg-slate-50 border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400 gap-1 overflow-hidden shrink-0 cursor-pointer">
-                    {newInvImage ? (
-                      <img src={newInvImage} className="w-full h-full object-cover" />
-                    ) : (
-                      <>
-                        <Camera size={24} />
-                        <span className="text-[7px] font-black uppercase">Foto</span>
-                      </>
-                    )}
+                    {newInvImage ? <img src={newInvImage} className="w-full h-full object-cover" /> : <><Camera size={24} /><span className="text-[7px] font-black uppercase">Foto</span></>}
                     <input type="file" ref={fileInputRef} onChange={handleImageChange} accept="image/*" className="hidden" />
                   </div>
                   <div className="flex-1 space-y-4">
@@ -707,23 +730,10 @@ const App: React.FC = () => {
                     </select>
                   </div>
                 </div>
-
                 <div className="grid grid-cols-2 gap-3">
-                   <div>
-                      <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Cantidad</label>
-                      <input type="number" value={newInvQty} onChange={e => setNewInvQty(parseInt(e.target.value) || 0)} className="w-full p-3 bg-slate-50 rounded-xl font-bold border-none" />
-                   </div>
-                   <div>
-                      <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Unidad</label>
-                      <input type="text" placeholder="unid, kg, packs..." value={newInvUnit} onChange={e => setNewInvUnit(e.target.value)} className="w-full p-3 bg-slate-50 rounded-xl font-bold border-none text-xs" />
-                   </div>
+                   <input type="number" placeholder="Cant." value={newInvQty} onChange={e => setNewInvQty(parseInt(e.target.value) || 0)} className="w-full p-3 bg-slate-50 rounded-xl font-bold border-none" />
+                   <input type="text" placeholder="Unidad" value={newInvUnit} onChange={e => setNewInvUnit(e.target.value)} className="w-full p-3 bg-slate-50 rounded-xl font-bold border-none text-xs" />
                 </div>
-
-                <div>
-                   <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Comentarios / Notas</label>
-                   <textarea placeholder="Ej: Caduca pronto..." value={newInvComment} onChange={e => setNewInvComment(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-none text-xs h-24 resize-none outline-none focus:ring-2 focus:ring-indigo-100" />
-                </div>
-
                 <button onClick={handleAddInventory} className="w-full p-5 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-all uppercase tracking-widest text-xs">Añadir al almacén</button>
              </div>
           </div>
@@ -747,7 +757,6 @@ const App: React.FC = () => {
                   <select value={newTaskFreq} onChange={e => setNewTaskFreq(e.target.value as Frequency)} className="p-3 bg-slate-50 rounded-xl font-bold text-xs">
                     <option value="daily">Diaria</option>
                     <option value="weekly">Semanal</option>
-                    <option value="monthly">Mensual</option>
                     <option value="periodic">Periódica</option>
                   </select>
                 </div>
@@ -776,7 +785,6 @@ const App: React.FC = () => {
                   </div>
                 </div>
                 <div className="p-5 bg-indigo-50/50 rounded-[2rem] border border-indigo-100 space-y-4">
-                  <span className="text-xs font-black uppercase text-indigo-600">{fullWeekDays[selectedDayIndex]}</span>
                   <input type="text" value={currentSelectedPlanning.meals?.lunch || ''} onChange={(e) => updatePlanning(selectedDayIndex, { meals: { lunch: e.target.value } })} placeholder="Comida" className="w-full p-3 bg-white rounded-xl border-none font-bold text-sm shadow-sm" />
                   <input type="text" value={currentSelectedPlanning.meals?.dinner || ''} onChange={(e) => updatePlanning(selectedDayIndex, { meals: { dinner: e.target.value } })} placeholder="Cena" className="w-full p-3 bg-white rounded-xl border-none font-bold text-sm shadow-sm" />
                   <div className="grid grid-cols-2 gap-3">
@@ -792,16 +800,13 @@ const App: React.FC = () => {
 
       {showShiftCalendar && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={() => setShowShiftCalendar(false)}>
-          {/* Fix typo max-sm to max-w-sm */}
           <div className="bg-white w-full max-w-sm rounded-[3rem] p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-black text-slate-800 flex items-center gap-3"><Stethoscope className="text-orange-500" /> Guardias Carmen</h3>
-              {/* Added month navigation to the shift calendar */}
               <div className="flex items-center gap-2">
                 <button onClick={() => setCurrentCalendarMonth(prev => subMonths(prev, 1))} className="p-1 hover:bg-slate-100 rounded-lg text-slate-400"><ChevronLeft size={16} /></button>
                 <span className="text-[10px] font-black uppercase text-slate-500 min-w-[80px] text-center">{format(currentCalendarMonth, 'MMMM yyyy', { locale: es })}</span>
                 <button onClick={() => setCurrentCalendarMonth(prev => addMonths(prev, 1))} className="p-1 hover:bg-slate-100 rounded-lg text-slate-400"><ChevronRight size={16} /></button>
-                <button onClick={() => setShowShiftCalendar(false)} className="p-2 bg-slate-100 rounded-full text-slate-400 ml-2"><X size={20} /></button>
               </div>
             </div>
             <div className="grid grid-cols-7 gap-1">
