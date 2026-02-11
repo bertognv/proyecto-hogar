@@ -46,20 +46,15 @@
     <div id="root"></div>
     <script type="module" src="index.tsx"></script>
     <script>
+      // Registro de SW optimizado para despliegue en Vercel
       if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          // Registro simplificado para mayor compatibilidad en Vercel
-          navigator.serviceWorker.register('/sw.js')
-            .then(reg => console.log('Service Worker registrado correctamente'))
-            .catch(err => {
-              // Si falla por origen cruzado (ej. previsualización), lo ignoramos silenciosamente
-              if (!window.location.protocol.includes('https') && !window.location.hostname.includes('localhost')) {
-                 console.warn('SW requiere HTTPS o Localhost.');
-              } else {
-                 console.error('Error SW:', err);
-              }
-            });
-        });
+        navigator.serviceWorker.register('./sw.js', { scope: './' })
+          .then(function(registration) {
+            console.log('Registration successful, scope is:', registration.scope);
+          })
+          .catch(function(error) {
+            console.log('Service worker registration failed, error:', error);
+          });
       }
     </script>
 </body>
