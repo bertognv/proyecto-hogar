@@ -46,7 +46,6 @@ import {
   ChefHat,
   ShoppingBasket,
   Apple,
-  Zap as Power,
   History,
   Activity,
   ArrowRightLeft,
@@ -123,6 +122,7 @@ const App: React.FC = () => {
         const parsed = JSON.parse(saved);
         if (!parsed.inventoryItems) parsed.inventoryItems = INITIAL_DATA.inventoryItems;
         if (!parsed.tasks) parsed.tasks = [];
+        if (!parsed.weeklyPlanning) parsed.weeklyPlanning = INITIAL_PLANNING;
         return { ...INITIAL_DATA, ...parsed };
       } catch (e) {
         return INITIAL_DATA;
@@ -153,6 +153,11 @@ const App: React.FC = () => {
   const [newInvComment, setNewInvComment] = useState('');
   const [newInvImage, setNewInvImage] = useState<string | undefined>(undefined);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Task creation states
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskFreq, setNewTaskFreq] = useState<Frequency>('daily');
+  const [newTaskCategory, setNewTaskCategory] = useState('General');
 
   const today = new Date();
   const startOfThisWeek = startOfWeek(today, { weekStartsOn: 1 });
@@ -209,6 +214,23 @@ const App: React.FC = () => {
       updatePlanning(dayIdx, { sport: { carmen: isNowShift ? '🏥 Guardia' : '' } });
     }
     logActivity(`${isNowShift ? 'ha añadido' : 'ha quitado'} una guardia para el ${format(dateObj, 'd/MM')}`);
+  };
+
+  const handleAddTask = () => {
+    if (!newTaskTitle.trim()) return;
+    const newTask: Task = {
+      id: Date.now().toString(),
+      title: newTaskTitle,
+      category: newTaskCategory,
+      frequency: newTaskFreq,
+      nextDueDate: calculateNextDueDate(newTaskFreq, undefined),
+      completedToday: false,
+      lastModifiedBy: data.userName
+    };
+    setData(prev => ({ ...prev, tasks: [newTask, ...prev.tasks] }));
+    logActivity(`ha creado la tarea: ${newTaskTitle}`);
+    setNewTaskTitle('');
+    setShowAddTask(false);
   };
 
   const handleAddInventory = () => {
@@ -380,6 +402,68 @@ const App: React.FC = () => {
           </>
         )}
 
+        {activeTab === AppTab.WEEKLY && (
+          <div className="space-y-6 px-2 animate-in fade-in duration-500">
+            <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">Semana Completa <CalendarRange className="text-indigo-600" /></h2>
+            <div className="space-y-4">
+              {fullWeekDays.map((day, idx) => {
+                const dayISO = format(addDays(startOfThisWeek, idx), 'yyyy-MM-dd');
+                const isShift = data.shifts.includes(dayISO);
+                const plan = data.weeklyPlanning[idx] || { sport: { carmen: '', alberto: '' }, meals: { lunch: '', dinner: '' } };
+                return (
+                  <div key={idx} className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm flex items-start gap-4">
+                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 font-black text-xs ${isShift ? 'bg-orange-500 text-white' : 'bg-slate-50 text-slate-400'}`}>
+                      {weekDaysShort[idx]}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-[10px] font-black uppercase text-slate-400">{day}</span>
+                        {isShift && <span className="text-[8px] font-black uppercase text-orange-500 flex items-center gap-1"><Stethoscope size={8} /> Guardia</span>}
+                      </div>
+                      <div className="flex gap-4">
+                         <p className="text-[11px] text-slate-600 truncate"><Sun size={10} className="inline mr-1 text-emerald-500" /> {plan.meals?.lunch || '-'}</p>
+                         <p className="text-[11px] text-slate-600 truncate"><Moon size={10} className="inline mr-1 text-indigo-500" /> {plan.meals?.dinner || '-'}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {activeTab === AppTab.TASKS && (
+          <div className="space-y-6 px-2 animate-in fade-in duration-500">
+            <div className="flex justify-between items-end">
+              <div>
+                <h2 className="text-2xl font-black text-slate-800">Tareas del Hogar</h2>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Gestión de limpieza y mantenimiento</p>
+              </div>
+              <button onClick={() => setShowAddTask(true)} className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg active:scale-95 transition-all">
+                <Plus size={20} />
+              </button>
+            </div>
+            <div className="space-y-3">
+              {data.tasks.length > 0 ? data.tasks.map(task => (
+                <div key={task.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                    {CATEGORIES.find(cat => cat.id === task.category)?.icon || <LayoutGrid size={18} />}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-slate-800">{task.title}</p>
+                    <p className="text-[9px] font-black uppercase text-indigo-400">{task.frequency === 'periodic' ? `Cada ${task.intervalDays} días` : task.frequency}</p>
+                  </div>
+                  <button onClick={() => { setData(prev => ({...prev, tasks: prev.tasks.filter(t => t.id !== task.id)})); logActivity(`ha eliminado la tarea: ${task.title}`); }} className="p-2 text-rose-300">
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              )) : (
+                <div className="py-20 text-center text-slate-300">No hay tareas pendientes</div>
+              )}
+            </div>
+          </div>
+        )}
+
         {activeTab === AppTab.INVENTORY && (
           <div className="px-2 space-y-6 animate-in fade-in duration-500">
             <div className="flex justify-between items-end">
@@ -413,9 +497,9 @@ const App: React.FC = () => {
                         <p className="text-[10px] font-bold text-slate-400 uppercase">{item.quantity} {item.unit}</p>
                       </div>
                       <div className="flex items-center justify-between bg-slate-50 rounded-xl p-1">
-                         <button onClick={() => updateInvQty(item.id, -1)} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm text-rose-500 active:scale-90"><Minus size={14} /></button>
+                         <button onClick={(e) => { e.stopPropagation(); updateInvQty(item.id, -1); }} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm text-rose-500 active:scale-90"><Minus size={14} /></button>
                          <span className="text-xs font-black text-slate-700">{item.quantity}</span>
-                         <button onClick={() => updateInvQty(item.id, 1)} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm text-emerald-500 active:scale-90"><Plus size={14} /></button>
+                         <button onClick={(e) => { e.stopPropagation(); updateInvQty(item.id, 1); }} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm text-emerald-500 active:scale-90"><Plus size={14} /></button>
                       </div>
                    </div>
                 </div>
@@ -463,6 +547,7 @@ const App: React.FC = () => {
       <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/90 backdrop-blur-xl border-t border-slate-100 flex justify-around items-center py-5 px-4 safe-bottom shadow-lg z-50">
         <NavButton active={activeTab === AppTab.DASHBOARD} onClick={() => setActiveTab(AppTab.DASHBOARD)} icon={<Home size={22} />} label="Inicio" />
         <NavButton active={activeTab === AppTab.WEEKLY} onClick={() => setActiveTab(AppTab.WEEKLY)} icon={<CalendarRange size={22} />} label="Semana" />
+        <NavButton active={activeTab === AppTab.TASKS} onClick={() => setActiveTab(AppTab.TASKS)} icon={<CalendarIcon size={22} />} label="Tareas" />
         <NavButton active={activeTab === AppTab.SHOPPING} onClick={() => setActiveTab(AppTab.SHOPPING)} icon={<ShoppingCart size={22} />} label="Compra" />
         <NavButton active={activeTab === AppTab.INVENTORY} onClick={() => setActiveTab(AppTab.INVENTORY)} icon={<Package size={22} />} label="Almacén" />
         <NavButton active={activeTab === AppTab.ACTIVITY} onClick={() => setActiveTab(AppTab.ACTIVITY)} icon={<History size={22} />} label="Cambios" />
@@ -562,6 +647,33 @@ const App: React.FC = () => {
                 </div>
 
                 <button onClick={handleAddInventory} className="w-full p-5 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-all uppercase tracking-widest text-xs">Añadir al almacén</button>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL AÑADIR TAREA */}
+      {showAddTask && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-end justify-center" onClick={() => setShowAddTask(false)}>
+          <div className="bg-white w-full max-w-md rounded-t-[3rem] p-8 pb-12 shadow-2xl" onClick={e => e.stopPropagation()}>
+             <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-black">Nueva Tarea</h3>
+                <button onClick={() => setShowAddTask(false)} className="p-2 bg-slate-100 rounded-full text-slate-400"><X size={20} /></button>
+             </div>
+             <div className="space-y-4">
+                <input type="text" placeholder="¿Qué hay que hacer?" value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" />
+                <div className="grid grid-cols-2 gap-3">
+                  <select value={newTaskCategory} onChange={e => setNewTaskCategory(e.target.value)} className="p-3 bg-slate-50 rounded-xl font-bold text-xs">
+                    {CATEGORIES.map(cat => <option key={cat.id} value={cat.id}>{cat.label}</option>)}
+                  </select>
+                  <select value={newTaskFreq} onChange={e => setNewTaskFreq(e.target.value as Frequency)} className="p-3 bg-slate-50 rounded-xl font-bold text-xs">
+                    <option value="daily">Diaria</option>
+                    <option value="weekly">Semanal</option>
+                    <option value="monthly">Mensual</option>
+                    <option value="periodic">Periódica</option>
+                  </select>
+                </div>
+                <button onClick={handleAddTask} className="w-full p-4 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-all">Crear Tarea</button>
              </div>
           </div>
         </div>
