@@ -672,6 +672,48 @@ const App: React.FC = () => {
           </>
         )}
 
+        {activeTab === AppTab.WEEKLY && (
+          <div className="px-2 space-y-6 animate-in fade-in duration-500 pb-10">
+             <div>
+                <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">Planning Semanal <CalendarRange className="text-indigo-600" /></h2>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Gestión de menús y deporte</p>
+             </div>
+             <div className="space-y-4">
+                {fullWeekDays.map((dayName, idx) => {
+                  const dayPlanning = data.weeklyPlanning[idx] || { sport: { carmen: '', alberto: '' }, meals: { lunch: '', dinner: '' } };
+                  const dayDate = addDays(startOfThisWeek, idx);
+                  const isDayShift = data.shifts.includes(format(dayDate, 'yyyy-MM-dd'));
+                  
+                  return (
+                    <div key={idx} onClick={() => { setSelectedDayIndex(idx); setShowEditPlanning(true); }} className={`bg-white rounded-[2rem] border transition-all active:scale-[0.98] ${isDayShift ? 'border-orange-200 bg-orange-50/10' : 'border-slate-100'} shadow-sm p-5 space-y-4 cursor-pointer hover:shadow-md`}>
+                       <div className="flex justify-between items-center">
+                          <h4 className={`text-sm font-black uppercase tracking-wider ${isDayShift ? 'text-orange-600' : 'text-slate-800'}`}>{dayName} {format(dayDate, 'd')}</h4>
+                          {isDayShift && <div className="bg-orange-500 text-white p-1.5 rounded-lg shadow-sm shadow-orange-100"><Stethoscope size={14} /></div>}
+                       </div>
+                       
+                       <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-2">
+                             <div className="flex items-center gap-2 text-emerald-500"><Utensils size={14} /><span className="text-[9px] font-black uppercase">Menú</span></div>
+                             <div className="text-[10px] font-bold text-slate-600 bg-slate-50 p-2 rounded-xl border border-slate-100 min-h-[40px] flex flex-col justify-center">
+                                <p className="truncate line-clamp-1"><Sun size={8} className="inline mr-1 opacity-50" /> {dayPlanning.meals?.lunch || '-'}</p>
+                                <p className="truncate line-clamp-1"><Moon size={8} className="inline mr-1 opacity-50" /> {dayPlanning.meals?.dinner || '-'}</p>
+                             </div>
+                          </div>
+                          <div className="space-y-2">
+                             <div className="flex items-center gap-2 text-orange-500"><Dumbbell size={14} /><span className="text-[9px] font-black uppercase">Deporte</span></div>
+                             <div className="text-[10px] font-bold text-slate-600 bg-slate-50 p-2 rounded-xl border border-slate-100 min-h-[40px] flex flex-col justify-center">
+                                <p className="truncate line-clamp-1 text-rose-500"><User size={8} className="inline mr-1 opacity-50" /> C: {isDayShift ? 'Guardia' : (dayPlanning.sport?.carmen || '-')}</p>
+                                <p className="truncate line-clamp-1 text-indigo-500"><User size={8} className="inline mr-1 opacity-50" /> A: {dayPlanning.sport?.alberto || '-'}</p>
+                             </div>
+                          </div>
+                       </div>
+                    </div>
+                  );
+                })}
+             </div>
+          </div>
+        )}
+
         {activeTab === AppTab.TASKS && (
           <div className="space-y-6 px-2 animate-in fade-in duration-500 pb-10">
             <div className="flex justify-between items-end mb-2">
@@ -924,15 +966,21 @@ const App: React.FC = () => {
                 <div className="p-6 bg-indigo-50/50 rounded-[2rem] border border-indigo-100 space-y-5">
                   <div className="space-y-2">
                     <label className="text-[8px] font-black uppercase text-slate-400 ml-1">Comida</label>
-                    <input type="text" value={currentSelectedPlanning.meals?.lunch || ''} onChange={(e) => updatePlanning(selectedDayIndex, { meals: { lunch: e.target.value } })} placeholder="¿Qué comemos?" className="w-full p-4 bg-white rounded-xl border-none font-bold text-sm shadow-sm outline-none" />
+                    <input type="text" value={data.weeklyPlanning[selectedDayIndex]?.meals?.lunch || ''} onChange={(e) => updatePlanning(selectedDayIndex, { meals: { lunch: e.target.value } })} placeholder="¿Qué comemos?" className="w-full p-4 bg-white rounded-xl border-none font-bold text-sm shadow-sm outline-none" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[8px] font-black uppercase text-slate-400 ml-1">Cena</label>
-                    <input type="text" value={currentSelectedPlanning.meals?.dinner || ''} onChange={(e) => updatePlanning(selectedDayIndex, { meals: { dinner: e.target.value } })} placeholder="¿Qué cenamos?" className="w-full p-4 bg-white rounded-xl border-none font-bold text-sm shadow-sm outline-none" />
+                    <input type="text" value={data.weeklyPlanning[selectedDayIndex]?.meals?.dinner || ''} onChange={(e) => updatePlanning(selectedDayIndex, { meals: { dinner: e.target.value } })} placeholder="¿Qué cenamos?" className="w-full p-4 bg-white rounded-xl border-none font-bold text-sm shadow-sm outline-none" />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
-                    <input type="text" value={currentSelectedPlanning.sport?.carmen || ''} onChange={(e) => updatePlanning(selectedDayIndex, { sport: { carmen: e.target.value } })} placeholder="Dep. Carmen" className="w-full p-4 bg-white rounded-xl border-none font-bold text-xs shadow-sm outline-none" />
-                    <input type="text" value={currentSelectedPlanning.sport?.alberto || ''} onChange={(e) => updatePlanning(selectedDayIndex, { sport: { alberto: e.target.value } })} placeholder="Dep. Alberto" className="w-full p-4 bg-white rounded-xl border-none font-bold text-xs shadow-sm outline-none" />
+                    <div className="space-y-1">
+                      <label className="text-[7px] font-black uppercase text-slate-400 ml-1">Dep. Carmen</label>
+                      <input type="text" value={data.weeklyPlanning[selectedDayIndex]?.sport?.carmen || ''} onChange={(e) => updatePlanning(selectedDayIndex, { sport: { carmen: e.target.value } })} placeholder="Dep. Carmen" className="w-full p-4 bg-white rounded-xl border-none font-bold text-xs shadow-sm outline-none" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[7px] font-black uppercase text-slate-400 ml-1">Dep. Alberto</label>
+                      <input type="text" value={data.weeklyPlanning[selectedDayIndex]?.sport?.alberto || ''} onChange={(e) => updatePlanning(selectedDayIndex, { sport: { alberto: e.target.value } })} placeholder="Dep. Alberto" className="w-full p-4 bg-white rounded-xl border-none font-bold text-xs shadow-sm outline-none" />
+                    </div>
                   </div>
                 </div>
                 <button onClick={() => { setShowEditPlanning(false); logActivity(`ha actualizado el planning del ${fullWeekDays[selectedDayIndex]}`); showToast('Semana guardada'); }} className="w-full p-5 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-all uppercase tracking-widest text-xs">Guardar Planning</button>
