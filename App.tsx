@@ -57,7 +57,7 @@ import {
   Info,
   Timer
 } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { AppData, Task, ShoppingItem, AppTab, Frequency, DayPlanning, UrgentNote, FamilyActivity, InventoryItem } from './types';
 import { calculateNextDueDate } from './utils/dateUtils';
 import { 
@@ -309,8 +309,6 @@ const App: React.FC = () => {
         )
       };
     });
-    const item = data.inventoryItems.find(i => i.id === id);
-    if (item) logActivity(`ha actualizado el stock de ${item.name}`);
   };
 
   const deleteInventoryItem = (id: string) => {
@@ -458,22 +456,11 @@ const App: React.FC = () => {
               </button>
             </div>
 
-            {/* FILTRO DE CATEGORÍAS */}
             <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
-               <button 
-                  onClick={() => setTaskFilter('all')} 
-                  className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all border ${taskFilter === 'all' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-white text-slate-400 border-slate-100'}`}
-               >
-                  Todas
-               </button>
+               <button onClick={() => setTaskFilter('all')} className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all border ${taskFilter === 'all' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-white text-slate-400 border-slate-100'}`}>Todas</button>
                {CATEGORIES.map(cat => (
-                  <button 
-                    key={cat.id} 
-                    onClick={() => setTaskFilter(cat.id)} 
-                    className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all border ${taskFilter === cat.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-white text-slate-400 border-slate-100'}`}
-                  >
-                    {cat.icon}
-                    {cat.label}
+                  <button key={cat.id} onClick={() => setTaskFilter(cat.id)} className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all border ${taskFilter === cat.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-white text-slate-400 border-slate-100'}`}>
+                    {cat.icon} {cat.label}
                   </button>
                ))}
             </div>
@@ -506,6 +493,55 @@ const App: React.FC = () => {
           </div>
         )}
 
+        {activeTab === AppTab.INVENTORY && (
+          <div className="px-2 space-y-6 animate-in fade-in duration-500">
+            <div className="flex justify-between items-end">
+              <div>
+                <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">Almacén <Package className="text-amber-500" /></h2>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Control de recursos</p>
+              </div>
+              <button onClick={() => setShowAddInventory(true)} className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg active:scale-95 transition-all">
+                <Plus size={20} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              {data.inventoryItems.length > 0 ? data.inventoryItems.map(item => (
+                <div key={item.id} className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden flex flex-col active:shadow-md transition-all">
+                   <div onClick={() => setSelectedInventoryItem(item)} className="aspect-square bg-slate-50 relative overflow-hidden group">
+                      {item.image ? (
+                        <img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-slate-200">
+                          <Package size={48} />
+                        </div>
+                      )}
+                      <div className="absolute top-3 right-3 bg-white/90 backdrop-blur px-2 py-1 rounded-lg text-[9px] font-black text-slate-800 border border-slate-100 uppercase">
+                         {item.category}
+                      </div>
+                   </div>
+                   <div className="p-4 space-y-3">
+                      <div onClick={() => setSelectedInventoryItem(item)}>
+                        <h4 className="font-black text-slate-800 text-sm truncate">{item.name}</h4>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">{item.quantity} {item.unit}</p>
+                      </div>
+                      <div className="flex items-center justify-between bg-slate-50 rounded-xl p-1">
+                         <button onClick={(e) => { e.stopPropagation(); updateInvQty(item.id, -1); }} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm text-rose-500 active:scale-90"><Minus size={14} /></button>
+                         <span className="text-xs font-black text-slate-700">{item.quantity}</span>
+                         <button onClick={(e) => { e.stopPropagation(); updateInvQty(item.id, 1); }} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm text-emerald-500 active:scale-90"><Plus size={14} /></button>
+                      </div>
+                   </div>
+                </div>
+              )) : (
+                <div className="col-span-2 py-20 text-center text-slate-300">
+                  <Package size={48} className="mx-auto mb-4 opacity-20" />
+                  <p className="text-sm font-bold">El almacén está vacío</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {activeTab === AppTab.SHOPPING && (
             <div className="px-2">
                 <h2 className="text-2xl font-black text-slate-800 mb-6 flex items-center gap-3">Lista de Compra <ShoppingCart className="text-emerald-500" /></h2>
@@ -516,8 +552,7 @@ const App: React.FC = () => {
                 />
             </div>
         )}
-
-        {/* ... (Resto de pestañas como INVENTORY, WEEKLY, ACTIVITY se mantienen igual) */}
+        
         {activeTab === AppTab.WEEKLY && (
           <div className="space-y-6 px-2 animate-in fade-in duration-500">
             <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">Semana Completa <CalendarRange className="text-indigo-600" /></h2>
@@ -561,17 +596,103 @@ const App: React.FC = () => {
             </div>
           </div>
         )}
+
+        {activeTab === AppTab.ACTIVITY && (
+            <div className="space-y-6 animate-in fade-in duration-500">
+                <div className="px-2">
+                    <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">Actividad <History className="text-indigo-600" /></h2>
+                </div>
+                <div className="space-y-3">
+                    {data.familyActivity.map(item => (
+                        <div key={item.id} className="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-100 flex gap-4 items-start">
+                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${item.user === 'Carmen' ? 'bg-rose-50 text-rose-500' : 'bg-indigo-50 text-indigo-500'}`}>
+                                <User size={20} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-xs text-slate-700 leading-relaxed"><span className="font-black text-slate-900">{item.user}</span> {item.action}</p>
+                                <p className="text-[9px] font-bold text-slate-400 uppercase mt-2">{formatDistanceToNow(parseISO(item.timestamp), { addSuffix: true, locale: es })}</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )}
       </main>
 
       <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/90 backdrop-blur-xl border-t border-slate-100 flex justify-around items-center py-5 px-4 safe-bottom shadow-lg z-50">
         <NavButton active={activeTab === AppTab.DASHBOARD} onClick={() => setActiveTab(AppTab.DASHBOARD)} icon={<Home size={22} />} label="Inicio" />
         <NavButton active={activeTab === AppTab.WEEKLY} onClick={() => setActiveTab(AppTab.WEEKLY)} icon={<CalendarRange size={22} />} label="Semana" />
         <NavButton active={activeTab === AppTab.TASKS} onClick={() => setActiveTab(AppTab.TASKS)} icon={<CheckCircle2 size={22} />} label="Tareas" />
-        <NavButton active={activeTab === AppTab.SHOPPING} onClick={() => setActiveTab(AppTab.SHOPPING)} icon={<ShoppingCart size={22} />} label="Compra" />
         <NavButton active={activeTab === AppTab.INVENTORY} onClick={() => setActiveTab(AppTab.INVENTORY)} icon={<Package size={22} />} label="Almacén" />
+        <NavButton active={activeTab === AppTab.SHOPPING} onClick={() => setActiveTab(AppTab.SHOPPING)} icon={<ShoppingCart size={22} />} label="Compra" />
       </nav>
 
-      {/* MODALES AÑADIR */}
+      {/* MODALES ALMACÉN */}
+      {selectedInventoryItem && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-6" onClick={() => setSelectedInventoryItem(null)}>
+          <div className="bg-white w-full max-w-sm rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+            <div className="aspect-video w-full bg-slate-100 relative">
+              {selectedInventoryItem.image ? (
+                <img src={selectedInventoryItem.image} alt={selectedInventoryItem.name} className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-slate-300">
+                  <Package size={64} />
+                </div>
+              )}
+              <button onClick={() => setSelectedInventoryItem(null)} className="absolute top-4 right-4 p-2 bg-white/90 backdrop-blur rounded-full text-slate-800 shadow-sm"><X size={20} /></button>
+            </div>
+            <div className="p-8 space-y-6">
+              <div>
+                <span className="text-[10px] font-black uppercase text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md">{selectedInventoryItem.category}</span>
+                <h3 className="text-2xl font-black text-slate-800 mt-2">{selectedInventoryItem.name}</h3>
+                <p className="text-sm font-bold text-slate-400 mt-1">{selectedInventoryItem.quantity} {selectedInventoryItem.unit} en stock</p>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => deleteInventoryItem(selectedInventoryItem.id)} className="flex-1 p-4 bg-rose-50 text-rose-500 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2">
+                  <Trash2 size={16} /> Eliminar
+                </button>
+                <button onClick={() => setSelectedInventoryItem(null)} className="flex-1 p-4 bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest">Cerrar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAddInventory && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-end justify-center" onClick={() => { setShowAddInventory(false); resetInvForm(); }}>
+          <div className="bg-white w-full max-w-md rounded-t-[3rem] p-8 pb-12 shadow-2xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+             <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-black flex items-center gap-3">Añadir al Almacén</h3>
+                <button onClick={() => { setShowAddInventory(false); resetInvForm(); }} className="p-2 bg-slate-100 rounded-full text-slate-400"><X size={20} /></button>
+             </div>
+             <div className="space-y-6">
+                <div className="flex gap-4">
+                  <div onClick={() => fileInputRef.current?.click()} className="w-24 h-24 rounded-3xl bg-slate-50 border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400 gap-1 overflow-hidden shrink-0 cursor-pointer">
+                    {newInvImage ? <img src={newInvImage} className="w-full h-full object-cover" /> : <><Camera size={24} /><span className="text-[7px] font-black uppercase">Foto</span></>}
+                    <input type="file" ref={fileInputRef} onChange={handleImageChange} accept="image/*" className="hidden" />
+                  </div>
+                  <div className="flex-1 space-y-4">
+                    <input type="text" placeholder="Producto" value={newInvName} onChange={e => setNewInvName(e.target.value)} className="w-full p-3 bg-slate-50 rounded-xl font-bold border-none outline-none" />
+                    <select value={newInvCategory} onChange={e => setNewInvCategory(e.target.value)} className="w-full p-3 bg-slate-50 rounded-xl font-bold border-none text-xs">
+                       <option value="Cocina">Cocina / Alimentación</option>
+                       <option value="Limpieza">Limpieza</option>
+                       <option value="Higiene">Higiene</option>
+                       <option value="Mascotas">Mascotas</option>
+                       <option value="Mantenimiento">Mantenimiento</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                   <input type="number" placeholder="Cant." value={newInvQty} onChange={e => setNewInvQty(parseInt(e.target.value) || 0)} className="w-full p-3 bg-slate-50 rounded-xl font-bold border-none" />
+                   <input type="text" placeholder="Ud. (kg, ud, l...)" value={newInvUnit} onChange={e => setNewInvUnit(e.target.value)} className="w-full p-3 bg-slate-50 rounded-xl font-bold border-none text-xs" />
+                </div>
+                <button onClick={handleAddInventory} className="w-full p-5 bg-indigo-600 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-all uppercase tracking-widest text-xs">Guardar en Almacén</button>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {/* RESTO DE MODALES */}
       {showAddTask && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-end justify-center" onClick={() => setShowAddTask(false)}>
           <div className="bg-white w-full max-md rounded-t-[3rem] p-8 pb-12 shadow-2xl" onClick={e => e.stopPropagation()}>
@@ -658,17 +779,32 @@ const ShoppingList: React.FC<{ items: ShoppingItem[]; onToggle: (id: string) => 
     
     let finalPrice = parseFloat(p);
     
-    // Si no hay precio manual, estimamos con IA
     if (isNaN(finalPrice) || finalPrice <= 0) {
       setIsEstimating(true);
       try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({ 
           model: 'gemini-3-flash-preview', 
-          contents: `Estima el precio medio aproximado en un supermercado español (Mercadona/Carrefour) para: ${n.trim()}. Devuelve SOLAMENTE el número con dos decimales, sin texto ni símbolos.` 
+          contents: `Estima el precio medio aproximado en un supermercado estándar en España para este producto: "${n.trim()}". Devuelve el precio como un número.`,
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                estimatedPrice: {
+                  type: Type.NUMBER,
+                  description: "El precio estimado en euros (EUR) para una unidad o paquete estándar."
+                }
+              },
+              required: ["estimatedPrice"]
+            }
+          }
         });
-        finalPrice = parseFloat(response.text.trim().replace(/[^0-9.]/g, '')) || 0;
+        
+        const result = JSON.parse(response.text.trim());
+        finalPrice = result.estimatedPrice || 0;
       } catch (e) {
+        console.error("Error estimando precio:", e);
         finalPrice = 0;
       } finally {
         setIsEstimating(false);
@@ -686,7 +822,7 @@ const ShoppingList: React.FC<{ items: ShoppingItem[]; onToggle: (id: string) => 
         <div className="flex gap-2">
           <input 
             type="text" 
-            placeholder="¿Qué falta?" 
+            placeholder="Producto..." 
             value={n} 
             onChange={(e) => setN(e.target.value)} 
             className="flex-1 bg-slate-50 p-3 rounded-xl font-bold outline-none border-none text-sm" 
@@ -694,7 +830,7 @@ const ShoppingList: React.FC<{ items: ShoppingItem[]; onToggle: (id: string) => 
           <div className="relative w-24">
             <input 
               type="number" 
-              placeholder="0.00" 
+              placeholder="Precio" 
               value={p} 
               onChange={(e) => setP(e.target.value)} 
               className="w-full bg-slate-50 p-3 rounded-xl font-bold outline-none border-none text-sm pr-6" 
@@ -708,24 +844,30 @@ const ShoppingList: React.FC<{ items: ShoppingItem[]; onToggle: (id: string) => 
           className="w-full p-4 bg-indigo-600 text-white rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2 font-black text-[10px] uppercase tracking-[0.1em]"
         >
           {isEstimating ? <RefreshCw className="animate-spin" size={16} /> : <Plus size={16} />}
-          {isEstimating ? 'Estimando precio...' : 'Añadir a la lista'}
+          {isEstimating ? 'Calculando...' : 'Añadir a la lista'}
         </button>
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-2 pb-10">
         {items.map(item => (
-          <div key={item.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4">
+          <div key={item.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4 animate-in slide-in-from-bottom-2 duration-300">
             <button onClick={() => onToggle(item.id)} className={item.completed ? 'text-emerald-500' : 'text-slate-200'}>
               {item.completed ? <CheckCircle2 size={24} fill="currentColor" /> : <Circle size={24} />}
             </button>
-            <div className="flex-1">
-                <p className={`font-bold text-sm ${item.completed ? 'line-through text-slate-400' : 'text-slate-800'}`}>{item.name}</p>
+            <div className="flex-1 min-w-0">
+                <p className={`font-bold text-sm truncate ${item.completed ? 'line-through text-slate-400' : 'text-slate-800'}`}>{item.name}</p>
                 <p className="text-[10px] font-black text-indigo-400 flex items-center gap-1">
                   <Euro size={10} /> {item.price?.toFixed(2)}€
                 </p>
             </div>
           </div>
         ))}
+        {items.length === 0 && (
+          <div className="py-20 text-center text-slate-300 opacity-50">
+            <ShoppingBasket size={48} className="mx-auto mb-4" />
+            <p className="text-sm font-bold uppercase tracking-widest">Nada que comprar por ahora</p>
+          </div>
+        )}
       </div>
     </div>
   );
